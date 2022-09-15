@@ -61,6 +61,7 @@ common lang
     ViewPatterns
     AllowAmbiguousTypes
     TypeFamilies
+    OverloadedStrings
 
 library
     -- Import common warning flags.

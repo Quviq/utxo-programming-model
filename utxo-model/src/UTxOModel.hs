@@ -3,17 +3,30 @@ module UTxOModel where
 import Control.Monad
 
 import Data.Typeable
+import Data.String
 
 import Value
 
 data Some (f :: * -> *) where
   Some :: Typeable a => f a -> Some f
 
+data Address = Script String
+             | Wallet Int
+             deriving (Ord, Eq, Show)
+
+instance IsString Address where
+  fromString = Script
+
+-- TODO: no notion of what scripts owns this UTxO - do we need that?
+-- What about UTxOs given to wallets?
+-- Is there some way to get around the "address" notion??
 data UTxO a = NoUTxO
-            | UTxO String Value a
+            | UTxO Address Value a
             deriving (Ord, Eq, Show)
 
-newtype UTxORef a = UTxORef { unUTxORef :: Integer }
+data UTxORef a = NoUTxORef
+               | UTxORef Integer
+               deriving (Ord, Eq, Show)
 
 data SmartContract a where
   Done       :: a -> SmartContract a
@@ -24,9 +37,9 @@ data SmartContract a where
   Observe    :: UTxORef a
              -> (a -> SmartContract b)
              -> SmartContract b
-  FindUTxO   :: Typeable a
-             => String
-             -> (UTxORef a -> SmartContract b)
+  FindUTxOs  :: Typeable a
+             => Address
+             -> ([UTxORef a] -> SmartContract b)
              -> SmartContract b
 
 deriving instance Functor SmartContract
@@ -39,7 +52,7 @@ instance Monad SmartContract where
   Done a            >>= k = k a
   Atomically f as c >>= k = Atomically f as (c >=> k)
   Observe ref c     >>= k = Observe ref     (c >=> k)
-  FindUTxO name c   >>= k = FindUTxO name   (c >=> k)
+  FindUTxOs addr c  >>= k = FindUTxOs addr  (c >=> k)
 
 class TxType a where
   type Contract a
@@ -89,5 +102,10 @@ tx a = atomic @a (txify a) []
 observe :: forall a. UTxORef a -> SmartContract a
 observe ref = Observe ref Done
 
-findUTxO :: forall a. Typeable a => String -> SmartContract (UTxORef a)
-findUTxO name = FindUTxO name Done
+findUTxOs :: forall a. Typeable a => Address -> SmartContract [UTxORef a]
+findUTxOs addr = FindUTxOs addr Done
+
+new :: SmartContract (UTxORef a)
+new = return NoUTxORef
+
+-- TODO: build a little interpreter for this language

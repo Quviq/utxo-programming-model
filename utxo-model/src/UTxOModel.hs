@@ -23,9 +23,11 @@ data SmartContract a where
              -> SmartContract c
 
 deriving instance Functor SmartContract
+
 instance Applicative SmartContract where
   pure = Done
   (<*>) = ap
+
 instance Monad SmartContract where
   Done a            >>= k = k a
   Atomically f as c >>= k = Atomically f as (c >=> k)

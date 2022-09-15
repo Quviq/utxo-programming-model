@@ -9,3 +9,9 @@ data ValueKey = Ada
 
 newtype Value = Value { unValue :: Map ValueKey Integer }
               deriving (Ord, Eq, Show)
+
+instance Semigroup Value where
+  Value m <> Value m' = Value (Map.unionWith (+) m m')
+
+instance Monoid Value where
+  mempty = Value mempty

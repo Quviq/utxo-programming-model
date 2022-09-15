@@ -10,7 +10,7 @@ data Some (f :: * -> *) where
   Some :: Typeable a => f a -> Some f
 
 data UTxO a = NoUTxO
-            | UTxO Value a
+            | UTxO String Value a
             deriving (Ord, Eq, Show)
 
 newtype UTxORef a = UTxORef { unUTxORef :: Integer }
@@ -21,6 +21,13 @@ data SmartContract a where
              -> [Some UTxORef]
              -> ([Some UTxORef] -> SmartContract c)
              -> SmartContract c
+  Observe    :: UTxORef a
+             -> (a -> SmartContract b)
+             -> SmartContract b
+  FindUTxO   :: Typeable a
+             => String
+             -> (UTxORef a -> SmartContract b)
+             -> SmartContract b
 
 deriving instance Functor SmartContract
 
@@ -31,6 +38,8 @@ instance Applicative SmartContract where
 instance Monad SmartContract where
   Done a            >>= k = k a
   Atomically f as c >>= k = Atomically f as (c >=> k)
+  Observe ref c     >>= k = Observe ref     (c >=> k)
+  FindUTxO name c   >>= k = FindUTxO name   (c >=> k)
 
 class TxType a where
   type Contract a
@@ -76,3 +85,9 @@ instance (Typeable a, TxType b) => TxType (UTxO a -> b) where
 
 tx :: forall a. TxType a => a -> Contract a
 tx a = atomic @a (txify a) []
+
+observe :: forall a. UTxORef a -> SmartContract a
+observe ref = Observe ref Done
+
+findUTxO :: forall a. Typeable a => String -> SmartContract (UTxORef a)
+findUTxO name = FindUTxO name Done

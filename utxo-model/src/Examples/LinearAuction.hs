@@ -27,8 +27,8 @@ import Data.Group
 
   Now, one could imagine that the way to do this is to only expose the builder
   functions as the destructors of "auction" or "escrow" UTxOs (using some
-  type-index + module system magic). However, *this is not enough* because
-  one might write a function like:
+  type-index + module system magic and not allowing you to pattern-match on
+  UTxOs). However, *this is not enough* because one might write a function like:
 
   cheat auctionUTxO = UTxO myWallet (valueOf auctionUTxO) ()
 
@@ -53,6 +53,24 @@ import Data.Group
 
   Now, there are lots of details to work out but that's later Ulf and Max's problem.
   Now it's playtime.
+
+  One more thing!
+
+  To use a `UTxO SomeWallet ()` one would need something like a function of type
+  `UTxO SomeWallet () -o ()` that would acutally consume the UTxO (you can't pattern
+  match on UTxOs remember!). Now, no such function should exist in general but you could
+  have a monadic action in the `SmartContract` monad that gives you this - something like:
+
+  signedBy wallet1 $ \ destructor :: UTxO SomeWallet () -o () -> myTxCode destructor
+
+  where `destructor` here would check that the input UTxO actually belongs to Wallet 1.
+
+  ---
+
+  One of many questions that remains to be answered is what the implications of this are
+  when we go to our own stand-alone language? Clearly (?) we still need some form of linear
+  type system - maybe it can be cleverererrere than Haskell's? Anyway, now it's *really*
+  play time!
 
 -}
 

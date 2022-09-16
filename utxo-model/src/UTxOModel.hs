@@ -1,3 +1,4 @@
+-- TODO: we don't know if this makes *any fucking sense*
 module UTxOModel where
 
 import Control.Monad

@@ -72,9 +72,11 @@ library
     -- Modules exported by the library.
     exposed-modules:
       UTxOModel
+      LinearUTxOModel
       Value
       Examples.Fib
       Examples.Auction
+      Examples.LinearAuction
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -86,7 +88,9 @@ library
     build-depends:
       base ^>=4.16.3.0,
       containers,
-      groups
+      groups,
+      linear-base,
+      mtl
 
     -- Directories containing source files.
     hs-source-dirs:   src

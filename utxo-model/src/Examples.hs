@@ -15,7 +15,7 @@ unfib _                = NoUTxO
 -- In this model - how do you know what function
 -- can be applied to what UTxO and how do we model
 -- that failure in our modelling framework??
-
+--
 -- Maybe we need something like:
 --  (fibTx :: Tx (UTxO (Int, Int) -> UTxO (Int, Int)), unfibTx :: Tx (UTxO (Int, Int) -> UTxO ())) <- bind (fib, unfib) "fib"
 -- In the monad? This would be what creates
@@ -28,6 +28,9 @@ unfib _                = NoUTxO
 -- function to act as the "only ok way to use 'fib'" then don't we miss some
 -- compositionality? How do we use compositional functions that act across two "related"
 -- scripts? They somehow need to be "bound" twice to two different script names?
+--
+-- We also still need to get the notion of "who can do what" in here somehow. How would that
+-- work?
 
 driveFib :: Int -> SmartContract Int
 driveFib n = do

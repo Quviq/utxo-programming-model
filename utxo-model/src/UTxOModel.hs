@@ -24,6 +24,13 @@ data UTxO a = NoUTxO
             | UTxO Address Value a
             deriving (Ord, Eq, Show)
 
+addressOf :: UTxO a -> Address
+addressOf NoUTxO       = error "addressOf"
+addressOf (UTxO a _ _) = a
+
+minAda :: UTxO a -> Integer
+minAda _ = 2_000_000
+
 data UTxORef a = NoUTxORef
                | UTxORef Integer
                deriving (Ord, Eq, Show)
@@ -109,3 +116,24 @@ new :: SmartContract (UTxORef a)
 new = return NoUTxORef
 
 -- TODO: build a little interpreter for this language
+--
+-- TODO:
+-- In this model - how do you know what function
+-- can be applied to what UTxO and how do we model
+-- that failure in our modelling framework??
+--
+-- Maybe we need something like:
+--  (fibTx :: Tx (UTxO (Int, Int) -> UTxO (Int, Int)), unfibTx :: Tx (UTxO (Int, Int) -> UTxO ())) <- bind (fib, unfib) "fib"
+-- In the monad? This would be what creates
+-- the script "fib" - no other functions are allowed to interact with "fib" UTxOs?
+-- How do we compose functions that do several things at the same time? How do we deal
+-- with the whole composition thing here?
+--
+-- It would be nice to write compostions that work on several scripts as just nicely
+-- composed haskell functions. But if we need a notion of a `Tx` rather than a simple
+-- function to act as the "only ok way to use 'fib'" then don't we miss some
+-- compositionality? How do we use compositional functions that act across two "related"
+-- scripts? They somehow need to be "bound" twice to two different script names?
+--
+-- We also still need to get the notion of "who can do what" in here somehow. How would that
+-- work?

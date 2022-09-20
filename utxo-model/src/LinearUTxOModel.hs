@@ -32,3 +32,7 @@ minAda _ = 2_000_000
 
 failTx :: a %1 -> String -> b
 failTx = Unsafe.toLinear (const error)
+
+-- TODO:
+-- * Figure out SmartContrat monad to force evaluation of "validators"
+-- * Figure out module system stuff to force you to actually use the "validators"

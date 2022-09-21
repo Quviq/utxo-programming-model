@@ -54,6 +54,7 @@ common warnings
     ghc-options: -Wall
                  -fno-warn-star-is-type
                  -fno-warn-name-shadowing
+                 -fno-warn-incomplete-uni-patterns
 
 common lang
   default-language: GHC2021
@@ -63,6 +64,8 @@ common lang
     TypeFamilies
     OverloadedStrings
     RecordWildCards
+    PatternSynonyms
+    MultiWayIf
 
 library
     -- Import common warning flags.
@@ -73,9 +76,11 @@ library
     exposed-modules:
       UTxOModel
       LinearUTxOModel
+      Util
       Value
       Examples.Fib
       Examples.Auction
+      Examples.LinearAuctionTrusted
       Examples.LinearAuction
 
     -- Modules included in this library but not exported.

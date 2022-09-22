@@ -87,6 +87,11 @@ castUTxO (UTxO (AnyOwner addr) addr' value datum)
 
 type Time = Integer -- Slots
 
+-- NOTE: It's important that this talk about both an upper and a lower
+-- bound on time if we want to turn this into transactions. If this
+-- were just `newtype TrueTime = TrueTime { getTime :: Time }` it's
+-- not clear how to turn that into a function that works in a given
+-- time interval.
 data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
   deriving (Ord, Eq, Show)
 
@@ -96,7 +101,7 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- submit :: TxRepType -> SmartContract () (or whatever)
 --
 -- withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRepType) -> TxRepTyp
--- withTime :: (TrueTime -> TxRepType) -> TxRepType
+-- withTime :: Time -> Time -> (TrueTime -> TxRepType) -> TxRepType
 -- transform :: (UTxOs %1 -> UTxOs) -> TxRepType
 --
 -- The monad can insert the correct time and check that we are currently running on the

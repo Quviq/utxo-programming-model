@@ -7,6 +7,9 @@ module LinearUTxOModel
   , PubKeyOwner
   , AnyOwner
   , Signature
+  , TrueTime
+  , Time
+  , useTime
   , mkUTxO
   , spendUTxO
   , matchUTxO
@@ -82,6 +85,11 @@ castUTxO (UTxO (AnyOwner addr) addr' value datum)
   | addr == addr' = mkUTxO addr' value datum
   | otherwise     = failTx () "castUTxO failed."
 
+type Time = Integer -- Slots
+
+newtype TrueTime = TrueTime { useTime :: Time }
+  deriving (Ord, Eq, Show)
+
 -- TODO:
 -- This is the overall idea of how to build transactions and *true* script contexts:
 --
@@ -93,3 +101,7 @@ castUTxO (UTxO (AnyOwner addr) addr' value datum)
 --
 -- The monad can insert the correct time and check that we are currently running on the
 -- wallet that can sign for a given pub key hash etc.
+--
+-- The validator-builders meanwhile can use the `useTime :: TrueTime -> Time` function
+-- to check properties on time.
+

@@ -31,7 +31,9 @@ bid :: IsOwner owner
     -> UTxO Auction AuctionData
  %1 -> UTxO owner ()
  %1 -> Value
-    -> (UTxO Auction AuctionData, Maybe (UTxO AnyOwner ()), Maybe (UTxO owner ()))
+    -> ( UTxO Auction AuctionData
+       , Maybe (UTxO AnyOwner ())
+       , Maybe (UTxO owner ()))
 bid sign auctionUTxO utxo bid =
  let' (addressOf utxo)                $ \ (Ur addr, utxo) ->
  let' (bidInner auctionUTxO bid addr) $ \ (auctionUTxO', paybackUTxO) ->

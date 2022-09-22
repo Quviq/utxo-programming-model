@@ -87,7 +87,7 @@ castUTxO (UTxO (AnyOwner addr) addr' value datum)
 
 type Time = Integer -- Slots
 
-newtype TrueTime = TrueTime { useTime :: Time }
+data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
   deriving (Ord, Eq, Show)
 
 -- TODO:
@@ -102,6 +102,5 @@ newtype TrueTime = TrueTime { useTime :: Time }
 -- The monad can insert the correct time and check that we are currently running on the
 -- wallet that can sign for a given pub key hash etc.
 --
--- The validator-builders meanwhile can use the `useTime :: TrueTime -> Time` function
--- to check properties on time.
-
+-- The validator-builders meanwhile can use the `lowerBound :: TrueTime -> Time`
+-- and `upperBound :: TrueTime -> Time` functions to check properties on time.

@@ -109,3 +109,9 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 --
 -- The validator-builders meanwhile can use the `lowerBound :: TrueTime -> Time`
 -- and `upperBound :: TrueTime -> Time` functions to check properties on time.
+
+-- With this model there might be a problem with multiple transactions happening in
+-- the same transaction. However, if we type index UTxOs by a "phase" - giving us an
+-- "input utxo" and an "output utxo" type we would be able to enforce only one
+-- stage of transformation per transaction:
+-- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType

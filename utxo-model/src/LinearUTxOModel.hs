@@ -1,4 +1,5 @@
 {-# LANGUAGE LinearTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 module LinearUTxOModel
   ( PubKeyHash(..)
   , Address(..)
@@ -118,14 +119,43 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- stage of transformation per transaction:
 -- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType
 
+-- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
 data TList2 :: (* -> * -> *) -> [*] -> * where
   Nil :: TList2 f '[]
   Cons :: f a b -> TList2 f ts -> TList2 f ((a, b) : ts)
+
+tList2Append :: TList2 f xs -> TList2 f ys -> TList2 f (Append xs ys)
+tList2Append Nil xs         = xs
+tList2Append (Cons f xs) ys = Cons f (tList2Append xs ys)
+
+type family Append (xs :: [*]) (ys :: [*]) :: [*] where
+  Append '[] xs      = xs
+  Append (x : xs) ys = x : (Append xs ys)
 
 newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
 
 type UTxOs = TList2 UTxO
 type MaybeUTxOs = TList2 (MaybeF2 UTxO)
+
+class Result a where
+  type Res a :: [*]
+  toResult :: a -> TList2 (MaybeF2 UTxO) (Res a)
+
+instance Result (UTxO owner datum) where
+  type Res (UTxO owner datum) = (owner, datum) : '[]
+  toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
+
+instance Result (Maybe (UTxO owner datum)) where
+  type Res (Maybe (UTxO owner datum)) = (owner, datum) : '[]
+  toResult mutxo = Cons (MaybeF2 mutxo) Nil
+
+instance (Result a, Result b) => Result (a, b) where
+  type Res (a, b) = Append (Res a) (Res b)
+  toResult (a, b) = tList2Append (toResult a) (toResult b)
+
+instance (Result a, Result b, Result c) => Result (a, b, c) where
+  type Res (a, b, c) = Append (Res a) (Append (Res b) (Res c))
+  toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
 
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
 

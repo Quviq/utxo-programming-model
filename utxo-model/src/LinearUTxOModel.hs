@@ -122,20 +122,21 @@ data TList2 :: (* -> * -> *) -> [*] -> * where
   Nil :: TList2 f '[]
   Cons :: f a b -> TList2 f ts -> TList2 f ((a, b) : ts)
 
+newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
+
 type UTxOs = TList2 UTxO
+type MaybeUTxOs = TList2 (MaybeF2 UTxO)
 
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
 
 type UTxORefs = TList2 UTxORef
+type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
 data TxRep inputs outputs where
-  -- TODO: this should probably be `UTxOs inputs %1 -> MaybeUTxOs outputs`? So that in
-  -- some cases we can omit specific UTxOs in the output.
-  Transform     :: (UTxOs inputs %1 -> UTxOs outputs) %1 -> TxRep inputs outputs
+  Transform     :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
   WithSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep inputs outputs) -> TxRep inputs outputs
   WithTime      :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
 
 data SmartContract a where
   Done   :: a -> SmartContract a
-  -- TODO: this should be MaybeUTxORefs in the output?
-  Submit :: TxRep inputs outputs -> UTxORefs inputs -> (UTxORefs outputs -> SmartContract a) -> SmartContract a
+  Submit :: TxRep inputs outputs -> UTxORefs inputs -> (MaybeUTxORefs outputs -> SmartContract a) -> SmartContract a

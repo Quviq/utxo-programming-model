@@ -1,27 +1,36 @@
 {-# LANGUAGE LinearTypes #-}
 module LinearUTxOModel
-  ( PubKeyHash(..)
+  ( -- * Writing Validators
+    PubKeyHash(..)
   , Address(..)
   , UTxO
   , IsOwner(..)
   , PubKeyOwner
   , AnyOwner
   , Signature
-  , TrueTime
-  , Time
-  , UTxOs
-  , MaybeUTxOs
-  , UTxORef(..)
-  , UTxORefs
-  , MaybeUTxORefs
-  , lowerBound
-  , upperBound
   , mkUTxO
   , spendUTxO
   , matchUTxO
   , failTx
   , castUTxO
+  -- * Dealing with time
+  , TrueTime
+  , Time
+  , lowerBound
+  , upperBound
+  -- * Writing smart contracts
+  , SmartContract
+  , UTxOs
+  , MaybeUTxOs
+  , UTxORef(..)
+  , UTxORefs
+  , MaybeUTxORefs
+  , transform
+  , withSignature
+  , withTime
   ) where
+
+import Control.Monad
 
 import Data.String
 import Data.Group
@@ -140,3 +149,23 @@ data TxRep inputs outputs where
 data SmartContract a where
   Done   :: a -> SmartContract a
   Submit :: TxRep inputs outputs -> UTxORefs inputs -> (MaybeUTxORefs outputs -> SmartContract a) -> SmartContract a
+
+transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
+transform = Transform
+
+withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep inputs outputs) -> TxRep inputs outputs
+withSignature = WithSignature
+
+withTime :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
+withTime = WithTime
+
+instance Functor SmartContract where
+  fmap = liftM
+
+instance Applicative SmartContract where
+  pure = Done
+  (<*>) = ap
+
+instance Monad SmartContract where
+  Done a         >>= k = k a
+  Submit tx is c >>= k = Submit tx is (c >=> k)

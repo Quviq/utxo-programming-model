@@ -66,6 +66,7 @@ common lang
     RecordWildCards
     PatternSynonyms
     MultiWayIf
+    DataKinds
 
 library
     -- Import common warning flags.

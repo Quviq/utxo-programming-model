@@ -9,7 +9,8 @@ module LinearUTxOModel
   , Signature
   , TrueTime
   , Time
-  , useTime
+  , lowerBound
+  , upperBound
   , mkUTxO
   , spendUTxO
   , matchUTxO
@@ -110,8 +111,28 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- The validator-builders meanwhile can use the `lowerBound :: TrueTime -> Time`
 -- and `upperBound :: TrueTime -> Time` functions to check properties on time.
 
+-- TODO:
 -- With this model there might be a problem with multiple transactions happening in
 -- the same transaction. However, if we type index UTxOs by a "phase" - giving us an
 -- "input utxo" and an "output utxo" type we would be able to enforce only one
 -- stage of transformation per transaction:
 -- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType
+
+data TList2 :: (* -> * -> *) -> [*] -> * where
+  Nil :: TList2 f '[]
+  Cons :: f a b -> TList2 f ts -> TList2 f ((a, b) : ts)
+
+type UTxOs = TList2 UTxO
+
+newtype UTxORef owner datum = UTxORef { getRef :: Int }
+
+type UTxORefs = TList2 UTxORef
+
+data TxRep inputs outputs where
+  Transform     :: (UTxOs inputs %1 -> UTxOs outputs) %1 -> TxRep inputs outputs
+  WithSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep inputs outputs) -> TxRep inputs outputs
+  WithTime      :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
+
+data SmartContract a where
+  Done   :: a -> SmartContract a
+  Submit :: TxRep inputs outputs -> UTxORefs inputs -> (UTxORefs outputs -> SmartContract a) -> SmartContract a

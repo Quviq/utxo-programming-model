@@ -52,22 +52,42 @@ checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
 
+type family Outputs a :: [*] where
+  Outputs (a -> b)                   = Outputs b
+  Outputs (a %1 -> b)                = Outputs b
+  Outputs (UTxO owner datum)         = (owner, datum) :' []
+  Outputs (Maybe (UTxO owner datum)) = (owner, datum) : '[]
+  Outputs (a, b)                     = Append (Outputs a) (Outputs b)
+  Outputs (a, b, c)                  = Append (Outputs a) (Append (Outputs b) (Outputs c))
+
 class Result a where
-  type Res a :: [*]
-  toResult :: a -> MaybeUTxOs (Res a)
+  toResult :: a %1 -> MaybeUTxOs (Outputs a)
 
 instance Result (UTxO owner datum) where
-  type Res (UTxO owner datum) = (owner, datum) : '[]
   toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
 
 instance Result (Maybe (UTxO owner datum)) where
-  type Res (Maybe (UTxO owner datum)) = (owner, datum) : '[]
   toResult mutxo = Cons (MaybeF2 mutxo) Nil
 
 instance (Result a, Result b) => Result (a, b) where
-  type Res (a, b) = Append (Res a) (Res b)
   toResult (a, b) = tList2Append (toResult a) (toResult b)
 
+
 instance (Result a, Result b, Result c) => Result (a, b, c) where
-  type Res (a, b, c) = Append (Res a) (Append (Res b) (Res c))
   toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
+
+type family Inputs a :: [*] where
+  Inputs (UTxO owner datum %1 -> a) = (owner, datum) : Inputs a
+  Inputs _                          = '[]
+
+class Tx a where
+  txFun :: a %1 -> UTxOs (Inputs a) %1 -> MaybeUTxOs (Outputs a)
+
+instance (Inputs a ~ '[], Result a) => Tx a where
+  txFun r = (\ Nil -> toResult r)
+
+instance Tx b => Tx (UTxO owner datum %1 -> b) where
+  txFun f (Cons utxo args) = txFun (f utxo) args
+
+tx :: Tx t => t -> TxRep (Inputs t) (Outputs t)
+tx t = transform (txFun t)

@@ -20,6 +20,7 @@ module LinearUTxOModel
   , upperBound
   -- * Writing smart contracts
   , SmartContract
+  , TxRep
   , UTxOs
   , MaybeUTxOs
   , UTxORef(..)

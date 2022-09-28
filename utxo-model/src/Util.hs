@@ -1,4 +1,5 @@
 {-# LANGUAGE LinearTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Util where
 
 import Prelude.Linear (($))
@@ -9,6 +10,7 @@ import Data.Unrestricted.Linear
 import Data.Typeable
 
 import Value
+import Types
 
 import LinearUTxOModel
 
@@ -49,3 +51,23 @@ checkSignature :: Signature PubKeyOwner -> PubKeyHash -> ()
 checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
+
+class Result a where
+  type Res a :: [*]
+  toResult :: a -> MaybeUTxOs (Res a)
+
+instance Result (UTxO owner datum) where
+  type Res (UTxO owner datum) = (owner, datum) : '[]
+  toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
+
+instance Result (Maybe (UTxO owner datum)) where
+  type Res (Maybe (UTxO owner datum)) = (owner, datum) : '[]
+  toResult mutxo = Cons (MaybeF2 mutxo) Nil
+
+instance (Result a, Result b) => Result (a, b) where
+  type Res (a, b) = Append (Res a) (Res b)
+  toResult (a, b) = tList2Append (toResult a) (toResult b)
+
+instance (Result a, Result b, Result c) => Result (a, b, c) where
+  type Res (a, b, c) = Append (Res a) (Append (Res b) (Res c))
+  toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))

@@ -34,8 +34,6 @@ module LinearUTxOModel
 
 import Control.Monad
 
-import Data.String
-import Data.Group
 import Data.Typeable
 
 import Value

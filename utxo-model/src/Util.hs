@@ -52,9 +52,17 @@ checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
 
-tx :: Tx t => t -> TxRep (Inputs t) (Outputs t)
+tx :: IsTx t => t -> TxRep (Inputs t) (Outputs t)
 tx t = transform (txFun t)
 
+-- TODO: This can be made nicer if we introduce our own external `TxRep` type
+-- `Tx tx` (where we have e.g. `tx ~ UTxO o d %1 -> UTxO o' d' %1 -> (UTxO o d, Maybe (UTxO o' d'))`)
+-- whereby we could ignore the `Maybe`s that we get under this system with
+-- submit (tx :: Tx (UTxO o d %1 -> UTxO o' d' %1 -> (UTxO o d, Maybe (UTxO o' d'))))
+--  :: UTxORefs ... -> SmartContract (UTxORef o d, Maybe (UTxORef o' d'))
+-- instead of this function which would have result type:
+-- SmartContract (Maybe (UTxORef o d), Maybe (UTxORef o' d'))
+-- even though the first UTxORef is guaranteed by the type to always be there!
 submit :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (Unpacked outputs)
 submit = undefined
 
@@ -115,13 +123,11 @@ type family Inputs a :: [*] where
   Inputs (UTxO owner datum %1 -> a) = (owner, datum) : Inputs a
   Inputs _                          = '[]
 
-class Tx a where
+class IsTx a where
   txFun :: a %1 -> UTxOs (Inputs a) %1 -> MaybeUTxOs (Outputs a)
 
-instance (Inputs a ~ '[], Result a) => Tx a where
+instance (Inputs a ~ '[], Result a) => IsTx a where
   txFun r = (\ Nil -> toResult r)
 
-instance Tx b => Tx (UTxO owner datum %1 -> b) where
+instance IsTx b => IsTx (UTxO owner datum %1 -> b) where
   txFun f (Cons utxo args) = txFun (f utxo) args
-
-

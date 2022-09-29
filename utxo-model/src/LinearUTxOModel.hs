@@ -29,6 +29,7 @@ module LinearUTxOModel
   , transform
   , withSignature
   , withTime
+  , submitTx
   ) where
 
 import Control.Monad
@@ -113,23 +114,8 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
   deriving (Ord, Eq, Show)
 
 -- TODO:
--- This is the overall idea of how to build transactions and *true* script contexts:
---
--- submit :: TxRepType -> SmartContract () (or whatever)
---
--- withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRepType) -> TxRepTyp
--- withTime :: Time -> Time -> (TrueTime -> TxRepType) -> TxRepType
--- transform :: (UTxOs %1 -> UTxOs) -> TxRepType
---
--- The monad can insert the correct time and check that we are currently running on the
--- wallet that can sign for a given pub key hash etc.
---
--- The validator-builders meanwhile can use the `lowerBound :: TrueTime -> Time`
--- and `upperBound :: TrueTime -> Time` functions to check properties on time.
-
--- TODO:
 -- With this model there might be a problem with multiple transactions happening in
--- the same transaction. However, if we type index UTxOs by a "phase" - giving us an
+-- the same call to `submitTx`. However, if we type index UTxOs by a "phase" - giving us an
 -- "input utxo" and an "output utxo" type we would be able to enforce only one
 -- stage of transformation per transaction:
 -- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType
@@ -159,6 +145,9 @@ withSignature = WithSignature
 
 withTime :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
 withTime = WithTime
+
+submitTx :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (MaybeUTxORefs outputs)
+submitTx tx is = Submit tx is Done
 
 instance Functor SmartContract where
   fmap = liftM

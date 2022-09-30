@@ -145,7 +145,7 @@ type family Outputs a :: [*] where
   Outputs (a, b, c)                  = Append (Outputs a) (Append (Outputs b) (Outputs c))
   Outputs (a, b, c, d)               = Append (Outputs a) (Append (Outputs b) (Append (Outputs c) (Outputs d)))
 
-class Result a where
+class IsTypeList (Outputs a) => Result a where
   toResult :: a %1 -> MaybeUTxOs (Outputs a)
 
   fromResult :: forall x. MaybeUTxORefs (Append (Outputs a) x) -> (UTxORefOutputs a, MaybeUTxORefs x)
@@ -161,7 +161,7 @@ instance Result (Maybe (UTxO owner datum)) where
 
   fromResult (Cons (MaybeF2 mutxo) x) = (mutxo, x)
 
-instance forall a b. (Result a, Result b) => Result (a, b) where
+instance forall a b. (IsTypeList (Append (Outputs a) (Outputs b)), Result a, Result b) => Result (a, b) where
   toResult (a, b) = tList2Append (toResult a) (toResult b)
 
   fromResult :: forall x. MaybeUTxORefs (Append (Outputs (a, b)) x) -> (UTxORefOutputs (a, b), MaybeUTxORefs x)
@@ -171,7 +171,7 @@ instance forall a b. (Result a, Result b) => Result (a, b) where
           (b, xs'') = fromResult @b xs'
       in ((a, b), xs'')
 
-instance (Result a, Result b, Result c) => Result (a, b, c) where
+instance (IsTypeList (Append (Outputs a) (Append (Outputs b) (Outputs c))), Result a, Result b, Result c) => Result (a, b, c) where
   toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
 
   fromResult :: forall x. MaybeUTxORefs (Append (Outputs (a, b, c)) x) -> (UTxORefOutputs (a, b, c), MaybeUTxORefs x)

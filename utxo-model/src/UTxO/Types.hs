@@ -18,8 +18,27 @@ type family Append (xs :: [*]) (ys :: [*]) :: [*] where
 
 newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
 
-appendRightUnitProof :: forall a. Append a '[] :~: a
-appendRightUnitProof = error "TODO"
+data SingletonList (ts :: [*]) where
+  SingletonNil  :: SingletonList '[]
+  SingletonCons :: forall t ts. IsTypeList ts => SingletonList (t : ts)
 
-appendAssocProof :: forall a b c. Append a (Append b c) :~: Append (Append a b) c
-appendAssocProof = error "TODO"
+class IsTypeList (ts :: [*]) where
+  materialize :: SingletonList ts
+
+instance IsTypeList '[] where
+  materialize = SingletonNil
+
+instance IsTypeList xs => IsTypeList (x : xs) where
+  materialize = SingletonCons
+
+appendRightUnitProof :: forall a. IsTypeList a => Append a '[] :~: a
+appendRightUnitProof = case materialize @a of
+  SingletonNil -> Refl
+  SingletonCons @_ @as
+    | Refl <- appendRightUnitProof @as -> Refl
+
+appendAssocProof :: forall a b c. IsTypeList a => Append a (Append b c) :~: Append (Append a b) c
+appendAssocProof = case materialize @a of
+  SingletonNil -> Refl
+  SingletonCons @_ @as
+    | Refl <- appendAssocProof @as @b @c -> Refl

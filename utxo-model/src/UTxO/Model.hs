@@ -174,7 +174,6 @@ instance forall a b. (Result a, Result b) => Result (a, b) where
 instance (Result a, Result b, Result c) => Result (a, b, c) where
   toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
 
-  --TODO: this just uses the same trick as above but it's annoying
   fromResult :: forall x. MaybeUTxORefs (Append (Outputs (a, b, c)) x) -> (UTxORefOutputs (a, b, c), MaybeUTxORefs x)
   fromResult xs
     | Refl <- appendAssocProof @(Outputs b) @(Outputs c) @x

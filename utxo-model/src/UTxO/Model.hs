@@ -38,6 +38,13 @@ module UTxO.Model
   , SmartContract
   , UTxORef(..)
   , UTxORefs
+  , Transaction(..)
+  , IsTx(..)
+  , Inputs
+  , Outputs
+  , tx
+  , withTime
+  , withSignature
   -- * Linearity helpers
   , let'
   ) where
@@ -51,7 +58,8 @@ import Data.Typeable
 
 import UTxO.Value
 import UTxO.Types
-import UTxO.Trusted
+import UTxO.Trusted hiding (withTime, withSignature)
+import UTxO.Trusted qualified
 
 let' :: a %1 -> (a %1 -> b) %1 -> b
 let' a f = f a
@@ -91,8 +99,33 @@ checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
 
-tx :: IsTx t => t -> TxRep (Inputs t) (Outputs t)
-tx t = transform (txFun t)
+newtype Transaction t = Transaction { unTransaction :: TxRep (Inputs t) (Outputs t) }
+
+tx :: IsTx t => t -> Transaction t
+tx t = Transaction $ transform $ txFun t
+
+withSignature :: PubKeyHash -> (Signature PubKeyOwner -> Transaction t) -> Transaction t
+withSignature pkh tx = Transaction $ UTxO.Trusted.withSignature pkh (\ sign -> unTransaction (tx sign) )
+
+withTime :: Time -> Time -> (TrueTime -> Transaction t) -> Transaction t
+withTime t0 t1 tx = Transaction $ UTxO.Trusted.withTime t0 t1 (\ tt -> unTransaction (tx tt))
+
+submit :: IsTx t => Transaction t -> UTxORefs (Inputs t) -> SmartContract (UTxORefOutputs t)
+submit (Transaction t) irefs = do
+  orefs <- submitTx t irefs
+  _
+
+type family UTxORefOutputs t where
+  UTxORefOutputs (a %1 -> b)        = UTxORefOutputs b
+  UTxORefOutputs (a -> b)           = UTxORefOutputs b
+  UTxORefOutputs ()                 = ()
+  UTxORefOutputs (UTxO o d)         = UTxORef o d
+  UTxORefOutputs (Maybe (UTxO o d)) = Maybe (UTxORef o d)
+  UTxORefOutputs (a, b)             = (UTxORefOutputs a, UTxORefOutputs b)
+  UTxORefOutputs (a, b, c)          = (UTxORefOutputs a, UTxORefOutputs b, UTxORefOutputs c)
+  UTxORefOutputs (a, b, c, d)       = (UTxORefOutputs a, UTxORefOutputs b, UTxORefOutputs c, UTxORefOutputs d)
+
+{-
 
 -- TODO: This can be made nicer if we introduce our own external `TxRep` type
 -- `Tx tx` (where we have e.g. `tx ~ UTxO o d %1 -> UTxO o' d' %1 -> (UTxO o d, Maybe (UTxO o' d'))`)
@@ -107,16 +140,6 @@ submit = undefined
 
 -- * Don't look below this line, this is where all the dangerous type level stuff
 --  that's ugly and unfinished lives!
-
-type family Outputs a :: [*] where
-  Outputs (a -> b)                   = Outputs b
-  Outputs (a %1 -> b)                = Outputs b
-  Outputs ()                         = '[]
-  Outputs (UTxO owner datum)         = (owner, datum) : '[]
-  Outputs (Maybe (UTxO owner datum)) = (owner, datum) : '[]
-  Outputs (a, b)                     = Append (Outputs a) (Outputs b)
-  Outputs (a, b, c)                  = Append (Outputs a) (Append (Outputs b) (Outputs c))
-  Outputs (a, b, c, d)               = Append (Outputs a) (Append (Outputs b) (Append (Outputs c) (Outputs d)))
 
 type family Unpacked (a :: [*]) :: * where
   Unpacked '[]                                    = ()
@@ -142,6 +165,17 @@ instance Unpack ((o, d) : (o', d') : (o'', d'') : '[]) where
 
 instance Unpack (a : as) => Unpack ((o, d) : (o', d') : (o'', d'') : (a : as)) where
   unpack (Cons m (Cons m' (Cons m'' ms))) = (unMaybeF2 m, unMaybeF2 m', unMaybeF2 m'', unpack ms)
+-}
+
+type family Outputs a :: [*] where
+  Outputs (a -> b)                   = Outputs b
+  Outputs (a %1 -> b)                = Outputs b
+  Outputs ()                         = '[]
+  Outputs (UTxO owner datum)         = (owner, datum) : '[]
+  Outputs (Maybe (UTxO owner datum)) = (owner, datum) : '[]
+  Outputs (a, b)                     = Append (Outputs a) (Outputs b)
+  Outputs (a, b, c)                  = Append (Outputs a) (Append (Outputs b) (Outputs c))
+  Outputs (a, b, c, d)               = Append (Outputs a) (Append (Outputs b) (Append (Outputs c) (Outputs d)))
 
 class Result a where
   toResult :: a %1 -> MaybeUTxOs (Outputs a)

@@ -38,6 +38,7 @@ module UTxO.Model
   , SmartContract
   , UTxORef(..)
   , UTxORefs
+  , UTxORefOutputs
   , Transaction(..)
   , IsTx(..)
   , Inputs
@@ -110,10 +111,19 @@ withSignature pkh tx = Transaction $ UTxO.Trusted.withSignature pkh (\ sign -> u
 withTime :: Time -> Time -> (TrueTime -> Transaction t) -> Transaction t
 withTime t0 t1 tx = Transaction $ UTxO.Trusted.withTime t0 t1 (\ tt -> unTransaction (tx tt))
 
-submit :: IsTx t => Transaction t -> UTxORefs (Inputs t) -> SmartContract (UTxORefOutputs t)
+submit :: forall t.
+        ( Result (ResultOf t)
+        , UTxORefOutputs t ~ UTxORefOutputs (ResultOf t)
+        , Outputs t ~ Append (Outputs (ResultOf t)) '[]
+        , IsTx t
+        )
+       => Transaction t
+       -> UTxORefs (Inputs t)
+       -> SmartContract (UTxORefOutputs t)
 submit (Transaction t) irefs = do
   orefs <- submitTx t irefs
-  _
+  let (refs, _) = fromResult @(ResultOf t) @'[] orefs
+  return refs
 
 type family UTxORefOutputs t where
   UTxORefOutputs (a %1 -> b)        = UTxORefOutputs b
@@ -125,47 +135,10 @@ type family UTxORefOutputs t where
   UTxORefOutputs (a, b, c)          = (UTxORefOutputs a, UTxORefOutputs b, UTxORefOutputs c)
   UTxORefOutputs (a, b, c, d)       = (UTxORefOutputs a, UTxORefOutputs b, UTxORefOutputs c, UTxORefOutputs d)
 
-{-
-
--- TODO: This can be made nicer if we introduce our own external `TxRep` type
--- `Tx tx` (where we have e.g. `tx ~ UTxO o d %1 -> UTxO o' d' %1 -> (UTxO o d, Maybe (UTxO o' d'))`)
--- whereby we could ignore the `Maybe`s that we get under this system with
--- submit (tx :: Tx (UTxO o d %1 -> UTxO o' d' %1 -> (UTxO o d, Maybe (UTxO o' d'))))
---  :: UTxORefs ... -> SmartContract (UTxORef o d, Maybe (UTxORef o' d'))
--- instead of this function which would have result type:
--- SmartContract (Maybe (UTxORef o d), Maybe (UTxORef o' d'))
--- even though the first UTxORef is guaranteed by the type to always be there!
-submit :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (Unpacked outputs)
-submit = undefined
-
--- * Don't look below this line, this is where all the dangerous type level stuff
---  that's ugly and unfinished lives!
-
-type family Unpacked (a :: [*]) :: * where
-  Unpacked '[]                                    = ()
-  Unpacked ((o, d) : '[])                         = Maybe (UTxORef o d)
-  Unpacked ((o, d) : (o', d') : '[])              = (Maybe (UTxORef o d), Maybe (UTxORef o' d'))
-  Unpacked ((o, d) : (o', d') : (o'', d'') : '[]) = (Maybe (UTxORef o d), Maybe (UTxORef o' d'), Maybe (UTxORef o'' d''))
-  Unpacked ((o, d) : (o', d') : (o'', d'') : tys) = (Maybe (UTxORef o d), Maybe (UTxORef o' d'), Maybe (UTxORef o'' d''), Unpacked tys)
-
-class Unpack (a :: [*]) where
-  unpack :: MaybeUTxORefs a -> Unpacked a
-
-instance Unpack '[] where
-  unpack _ = ()
-
-instance Unpack ((o, d) : '[]) where
-  unpack (Cons m _) = unMaybeF2 m
-
-instance Unpack ((o, d) : (o', d') : '[]) where
-  unpack (Cons m (Cons m' _)) = (unMaybeF2 m, unMaybeF2 m')
-
-instance Unpack ((o, d) : (o', d') : (o'', d'') : '[]) where
-  unpack (Cons m (Cons m' (Cons m'' _))) = (unMaybeF2 m, unMaybeF2 m', unMaybeF2 m'')
-
-instance Unpack (a : as) => Unpack ((o, d) : (o', d') : (o'', d'') : (a : as)) where
-  unpack (Cons m (Cons m' (Cons m'' ms))) = (unMaybeF2 m, unMaybeF2 m', unMaybeF2 m'', unpack ms)
--}
+type family ResultOf a where
+  ResultOf (a %1 -> b) = ResultOf b
+  ResultOf (a -> b)    = ResultOf b
+  ResultOf a           = a
 
 type family Outputs a :: [*] where
   Outputs (a -> b)                   = Outputs b
@@ -179,18 +152,36 @@ type family Outputs a :: [*] where
 
 class Result a where
   toResult :: a %1 -> MaybeUTxOs (Outputs a)
+  fromResult :: forall x. MaybeUTxORefs (Append (Outputs a) x) -> (UTxORefOutputs a, MaybeUTxORefs x)
 
 instance Result (UTxO owner datum) where
   toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
+  fromResult (Cons (MaybeF2 (Just utxo)) x) = (utxo, x)
 
 instance Result (Maybe (UTxO owner datum)) where
   toResult mutxo = Cons (MaybeF2 mutxo) Nil
+  fromResult (Cons (MaybeF2 mutxo) x) = (mutxo, x)
 
-instance (Result a, Result b) => Result (a, b) where
+appendAssocProof :: forall a b c. Append a (Append b c) :~: Append (Append a b) c
+appendAssocProof = error "TODO"
+
+instance forall a b. (Result a, Result b) => Result (a, b) where
   toResult (a, b) = tList2Append (toResult a) (toResult b)
+
+  fromResult :: forall x. MaybeUTxORefs (Append (Outputs (a, b)) x) -> (UTxORefOutputs (a, b), MaybeUTxORefs x)
+  fromResult xs
+    | Refl <- appendAssocProof @(Outputs a) @(Outputs b) @x =
+      let (a, xs') = fromResult @a @(Append (Outputs b) x) xs
+          (b, xs'') = fromResult @b xs'
+      in ((a, b), xs'')
 
 instance (Result a, Result b, Result c) => Result (a, b, c) where
   toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
+  --TODO: this just uses the same trick as above but it's annoying
+  --fromResult xs = let (a, xs') = fromResult xs
+  --                    (b, xs'') = fromResult xs'
+  --                    (c, xs''') = fromResult xs''
+  --                in ((a, b, c), xs''')
 
 type family Inputs a :: [*] where
   Inputs (UTxO owner datum %1 -> a) = (owner, datum) : Inputs a

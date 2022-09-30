@@ -1,6 +1,8 @@
 {-# LANGUAGE LinearTypes #-}
 module UTxO.Types where
 
+import Data.Typeable
+
 -- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
 data TList2 :: (* -> * -> *) -> [*] -> * where
   Nil :: TList2 f '[]
@@ -15,3 +17,6 @@ type family Append (xs :: [*]) (ys :: [*]) :: [*] where
   Append (x : xs) ys = x : (Append xs ys)
 
 newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
+
+appendAssocProof :: forall a b c. Append a (Append b c) :~: Append (Append a b) c
+appendAssocProof = error "TODO"

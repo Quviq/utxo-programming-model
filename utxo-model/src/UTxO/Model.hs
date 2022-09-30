@@ -152,18 +152,18 @@ type family Outputs a :: [*] where
 
 class Result a where
   toResult :: a %1 -> MaybeUTxOs (Outputs a)
+
   fromResult :: forall x. MaybeUTxORefs (Append (Outputs a) x) -> (UTxORefOutputs a, MaybeUTxORefs x)
 
 instance Result (UTxO owner datum) where
   toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
+
   fromResult (Cons (MaybeF2 (Just utxo)) x) = (utxo, x)
 
 instance Result (Maybe (UTxO owner datum)) where
   toResult mutxo = Cons (MaybeF2 mutxo) Nil
-  fromResult (Cons (MaybeF2 mutxo) x) = (mutxo, x)
 
-appendAssocProof :: forall a b c. Append a (Append b c) :~: Append (Append a b) c
-appendAssocProof = error "TODO"
+  fromResult (Cons (MaybeF2 mutxo) x) = (mutxo, x)
 
 instance forall a b. (Result a, Result b) => Result (a, b) where
   toResult (a, b) = tList2Append (toResult a) (toResult b)
@@ -177,11 +177,16 @@ instance forall a b. (Result a, Result b) => Result (a, b) where
 
 instance (Result a, Result b, Result c) => Result (a, b, c) where
   toResult (a, b, c) = tList2Append (toResult a) (tList2Append (toResult b) (toResult c))
+
   --TODO: this just uses the same trick as above but it's annoying
-  --fromResult xs = let (a, xs') = fromResult xs
-  --                    (b, xs'') = fromResult xs'
-  --                    (c, xs''') = fromResult xs''
-  --                in ((a, b, c), xs''')
+  fromResult :: forall x. MaybeUTxORefs (Append (Outputs (a, b, c)) x) -> (UTxORefOutputs (a, b, c), MaybeUTxORefs x)
+  fromResult xs
+    | Refl <- appendAssocProof @(Outputs b) @(Outputs c) @x
+    , Refl <- appendAssocProof @(Outputs a) @(Append (Outputs b) (Outputs c)) @x =
+      let (a, xs') = fromResult @a @_ xs
+          (b, xs'') = fromResult @b @_ xs'
+          (c, xs''') = fromResult @c @_ xs''
+      in ((a, b, c), xs''')
 
 type family Inputs a :: [*] where
   Inputs (UTxO owner datum %1 -> a) = (owner, datum) : Inputs a

@@ -1,6 +1,5 @@
-{-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-module Examples.LinearAuctionTrusted
+module Examples.Auction.Trusted
   ( Auction
   , AuctionData(..)
   , bidInner
@@ -10,9 +9,7 @@ module Examples.LinearAuctionTrusted
 import Prelude.Linear (($))
 import Prelude hiding (($))
 
-import LinearUTxOModel
-import Value
-import Util
+import UTxO.Model
 
 import Data.Unrestricted.Linear
 import Data.Group

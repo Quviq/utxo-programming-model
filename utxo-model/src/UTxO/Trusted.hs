@@ -1,5 +1,4 @@
-{-# LANGUAGE LinearTypes #-}
-module LinearUTxOModel
+module UTxO.Trusted
   ( -- * Writing Validators
     PubKeyHash(..)
   , Address(..)
@@ -36,8 +35,8 @@ import Control.Monad
 
 import Data.Typeable
 
-import Value
-import Types
+import UTxO.Value
+import UTxO.Types
 
 import Unsafe.Linear qualified as Unsafe
 import Data.Unrestricted.Linear

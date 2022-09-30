@@ -1,5 +1,5 @@
 {-# LANGUAGE LinearTypes #-}
-module Types where
+module UTxO.Types where
 
 -- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
 data TList2 :: (* -> * -> *) -> [*] -> * where

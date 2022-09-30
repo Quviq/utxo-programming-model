@@ -1,17 +1,14 @@
-{-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-module Examples.LinearAuction where
+module Examples.Auction where
 
 import Prelude.Linear (($))
 import Prelude hiding (($))
 
-import LinearUTxOModel
-import Value
-import Util
+import UTxO.Model
 
 import Data.Unrestricted.Linear
 
-import Examples.LinearAuctionTrusted
+import Examples.Auction.Trusted
 
 setup :: Signature PubKeyOwner
       -> Value

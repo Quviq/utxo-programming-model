@@ -67,6 +67,7 @@ common lang
     PatternSynonyms
     MultiWayIf
     DataKinds
+    LinearTypes
 
 library
     -- Import common warning flags.
@@ -75,15 +76,12 @@ library
 
     -- Modules exported by the library.
     exposed-modules:
-      UTxOModel
-      LinearUTxOModel
-      Types
-      Util
-      Value
-      Examples.Fib
+      UTxO.Types
+      UTxO.Trusted
+      UTxO.Model
+      UTxO.Value
       Examples.Auction
-      Examples.LinearAuctionTrusted
-      Examples.LinearAuction
+      Examples.Auction.Trusted
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -100,4 +98,6 @@ library
       mtl
 
     -- Directories containing source files.
-    hs-source-dirs:   src
+    hs-source-dirs:
+      src
+      examples

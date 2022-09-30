@@ -1,6 +1,46 @@
-{-# LANGUAGE LinearTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Util where
+module UTxO.Model
+  ( -- * Dealing with values
+    Value(..)
+  , ValueKey(..)
+  , adaOf
+  -- * Writing Validators
+  -- ** UTxOs
+  , UTxO
+  , PubKeyHash(..)
+  , Address(..)
+  -- ** Ownership
+  , IsOwner(..)
+  , PubKeyOwner
+  , AnyOwner
+  , Signature
+  -- ** Consuming UTxOs
+  , spendUTxO
+  , matchUTxO
+  , useUTxO
+  , spendFromUTxO
+  , castUTxO
+  , addressOf
+  -- ** Failing transactions
+  , checkSignature
+  , failTx
+  -- ** Creating UTxOs
+  , mkUTxO
+  , mkScriptAddress
+  , mkScriptUTxO
+  , mkPubKeyUTxO
+  -- ** Dealing with time
+  , TrueTime
+  , Time
+  , lowerBound
+  , upperBound
+  -- * Writing smart contracts
+  , SmartContract
+  , UTxORef(..)
+  , UTxORefs
+  -- * Linearity helpers
+  , let'
+  ) where
 
 import Prelude.Linear (($))
 import Prelude hiding (($))
@@ -9,10 +49,9 @@ import Data.Group
 import Data.Unrestricted.Linear
 import Data.Typeable
 
-import Value
-import Types
-
-import LinearUTxOModel
+import UTxO.Value
+import UTxO.Types
+import UTxO.Trusted
 
 let' :: a %1 -> (a %1 -> b) %1 -> b
 let' a f = f a
@@ -28,12 +67,12 @@ useUTxO utxo sign =
   let' (spendUTxO utxo sign) $ \ () ->
   (a, v, d)
 
-spendFrom :: IsOwner owner
-          => Signature owner
-          -> Value
-          -> UTxO owner datum
-       %1 -> Maybe (UTxO owner datum)
-spendFrom sign v utxo =
+spendFromUTxO :: IsOwner owner
+              => Signature owner
+              -> Value
+              -> UTxO owner datum
+           %1 -> Maybe (UTxO owner datum)
+spendFromUTxO sign v utxo =
   let' (useUTxO utxo sign) $ \ (Ur a, Ur v', Ur d) ->
   if | v' == v   -> Nothing
      | otherwise -> Just $ mkUTxO a (v' <> invert v) d

@@ -46,6 +46,7 @@ module UTxO.Model
   , tx
   , withTime
   , withSignature
+  , submit
   -- * Linearity helpers
   , let'
   ) where
@@ -100,7 +101,7 @@ checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
 
-newtype Transaction t = Transaction { unTransaction :: TxRep (Inputs t) (Outputs t) }
+newtype Transaction t = Transaction { unTransaction :: TxRep (Inputs t) (Outputs (ResultOf t)) }
 
 tx :: IsTx t => t -> Transaction t
 tx t = Transaction $ transform $ txFun t
@@ -113,21 +114,17 @@ withTime t0 t1 tx = Transaction $ UTxO.Trusted.withTime t0 t1 (\ tt -> unTransac
 
 submit :: forall t.
         ( Result (ResultOf t)
-        , UTxORefOutputs t ~ UTxORefOutputs (ResultOf t)
-        , Outputs t ~ Append (Outputs (ResultOf t)) '[]
         , IsTx t
         )
        => Transaction t
        -> UTxORefs (Inputs t)
-       -> SmartContract (UTxORefOutputs t)
-submit (Transaction t) irefs = do
+       -> SmartContract (UTxORefOutputs (ResultOf t))
+submit (Transaction t) irefs | Refl <- appendRightUnitProof @(Outputs (ResultOf t)) = do
   orefs <- submitTx t irefs
   let (refs, _) = fromResult @(ResultOf t) @'[] orefs
   return refs
 
 type family UTxORefOutputs t where
-  UTxORefOutputs (a %1 -> b)        = UTxORefOutputs b
-  UTxORefOutputs (a -> b)           = UTxORefOutputs b
   UTxORefOutputs ()                 = ()
   UTxORefOutputs (UTxO o d)         = UTxORef o d
   UTxORefOutputs (Maybe (UTxO o d)) = Maybe (UTxORef o d)
@@ -141,8 +138,6 @@ type family ResultOf a where
   ResultOf a           = a
 
 type family Outputs a :: [*] where
-  Outputs (a -> b)                   = Outputs b
-  Outputs (a %1 -> b)                = Outputs b
   Outputs ()                         = '[]
   Outputs (UTxO owner datum)         = (owner, datum) : '[]
   Outputs (Maybe (UTxO owner datum)) = (owner, datum) : '[]
@@ -159,6 +154,7 @@ instance Result (UTxO owner datum) where
   toResult utxo = Cons (MaybeF2 $ Just utxo) Nil
 
   fromResult (Cons (MaybeF2 (Just utxo)) x) = (utxo, x)
+  fromResult (Cons (MaybeF2 Nothing) _)     = error "The impossible happened: fromResult @(UTxO owner datum) encountered Nothing"
 
 instance Result (Maybe (UTxO owner datum)) where
   toResult mutxo = Cons (MaybeF2 mutxo) Nil
@@ -193,9 +189,9 @@ type family Inputs a :: [*] where
   Inputs _                          = '[]
 
 class IsTx a where
-  txFun :: a %1 -> UTxOs (Inputs a) %1 -> MaybeUTxOs (Outputs a)
+  txFun :: a %1 -> UTxOs (Inputs a) %1 -> MaybeUTxOs (Outputs (ResultOf a))
 
-instance (Inputs a ~ '[], Result a) => IsTx a where
+instance (Inputs a ~ '[], ResultOf a ~ a, Result a) => IsTx a where
   txFun r = (\ Nil -> toResult r)
 
 instance IsTx b => IsTx (UTxO owner datum %1 -> b) where

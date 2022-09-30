@@ -18,5 +18,8 @@ type family Append (xs :: [*]) (ys :: [*]) :: [*] where
 
 newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
 
+appendRightUnitProof :: forall a. Append a '[] :~: a
+appendRightUnitProof = error "TODO"
+
 appendAssocProof :: forall a b c. Append a (Append b c) :~: Append (Append a b) c
 appendAssocProof = error "TODO"

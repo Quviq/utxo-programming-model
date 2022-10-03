@@ -47,6 +47,9 @@ module UTxO.Model
   , withTime
   , withSignature
   , submit
+  , lookupUTxO
+  , index
+  , coerceUTxORef
   -- * Linearity helpers
   , let'
   ) where

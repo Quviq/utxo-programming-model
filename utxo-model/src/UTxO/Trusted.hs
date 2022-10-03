@@ -29,6 +29,9 @@ module UTxO.Trusted
   , withSignature
   , withTime
   , submitTx
+  , lookupUTxO
+  , index
+  , coerceUTxORef -- TODO: is this safe??
   ) where
 
 import Control.Monad
@@ -122,6 +125,10 @@ type MaybeUTxOs = TList2 (MaybeF2 UTxO)
 
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
 
+-- TODO: is this safe? We need to write down how these owner tricks work
+coerceUTxORef :: UTxORef AnyOwner datum -> UTxORef owner datum
+coerceUTxORef = UTxORef . getRef
+
 type UTxORefs = TList2 UTxORef
 type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
@@ -131,8 +138,16 @@ data TxRep inputs outputs where
   WithTime      :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
 
 data SmartContract a where
-  Done   :: a -> SmartContract a
-  Submit :: TxRep inputs outputs -> UTxORefs inputs -> (MaybeUTxORefs outputs -> SmartContract a) -> SmartContract a
+  Done    :: a
+          -> SmartContract a
+  Submit  :: TxRep inputs outputs
+          -> UTxORefs inputs
+          -> (MaybeUTxORefs outputs -> SmartContract a)
+          -> SmartContract a
+  UTxOsAt :: Address
+          -> ([UTxORef AnyOwner datum] -> SmartContract a)
+          -> SmartContract a
+  Observe :: UTxORef owner datum -> (Maybe (UTxO owner datum) -> SmartContract a) -> SmartContract a
 
 transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
 transform = Transform
@@ -146,6 +161,15 @@ withTime = WithTime
 submitTx :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (MaybeUTxORefs outputs)
 submitTx tx is = Submit tx is Done
 
+index :: forall owner datum. IsOwner owner => Address -> SmartContract [UTxORef owner datum]
+index addr
+  | Just owner <- fresh @owner addr
+  , isAddressOf addr owner = UTxOsAt addr $ Done . map coerceUTxORef
+  | otherwise = return []
+
+lookupUTxO :: UTxORef owner datum -> SmartContract (Maybe (UTxO owner datum))
+lookupUTxO ref = Observe ref Done
+
 instance Functor SmartContract where
   fmap = liftM
 
@@ -156,3 +180,5 @@ instance Applicative SmartContract where
 instance Monad SmartContract where
   Done a         >>= k = k a
   Submit tx is c >>= k = Submit tx is (c >=> k)
+  UTxOsAt a c >>= k    = UTxOsAt a (c >=> k)
+  Observe r c >>= k    = Observe r (c >=> k)

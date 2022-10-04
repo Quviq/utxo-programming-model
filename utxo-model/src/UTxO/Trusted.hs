@@ -31,7 +31,6 @@ module UTxO.Trusted
   , submitTx
   , lookupUTxO
   , index
-  , coerceUTxORef -- TODO: is this safe??
   ) where
 
 import Control.Monad
@@ -125,7 +124,7 @@ type MaybeUTxOs = TList2 (MaybeF2 UTxO)
 
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
 
--- TODO: is this safe? We need to write down how these owner tricks work
+-- TODO: is this safe? We need to write down how these owner tricks work!
 coerceUTxORef :: UTxORef AnyOwner datum -> UTxORef owner datum
 coerceUTxORef = UTxORef . getRef
 
@@ -147,7 +146,11 @@ data SmartContract a where
   UTxOsAt :: Address
           -> ([UTxORef AnyOwner datum] -> SmartContract a)
           -> SmartContract a
-  Observe :: UTxORef owner datum -> (Maybe (UTxO owner datum) -> SmartContract a) -> SmartContract a
+  Observe :: UTxORef owner datum
+          -> (Maybe (Address, Value, datum) -> SmartContract a)
+          -> SmartContract a
+  Fail    :: String
+          -> SmartContract a
 
 transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
 transform = Transform
@@ -167,7 +170,7 @@ index addr
   , isAddressOf addr owner = UTxOsAt addr $ Done . map coerceUTxORef
   | otherwise = return []
 
-lookupUTxO :: UTxORef owner datum -> SmartContract (Maybe (UTxO owner datum))
+lookupUTxO :: UTxORef owner datum -> SmartContract (Maybe (Address, Value, datum))
 lookupUTxO ref = Observe ref Done
 
 instance Functor SmartContract where
@@ -180,5 +183,9 @@ instance Applicative SmartContract where
 instance Monad SmartContract where
   Done a         >>= k = k a
   Submit tx is c >>= k = Submit tx is (c >=> k)
-  UTxOsAt a c >>= k    = UTxOsAt a (c >=> k)
-  Observe r c >>= k    = Observe r (c >=> k)
+  UTxOsAt a c    >>= k = UTxOsAt a (c >=> k)
+  Observe r c    >>= k = Observe r (c >=> k)
+  Fail s         >>= _ = Fail s
+
+instance MonadFail SmartContract where
+  fail = Fail

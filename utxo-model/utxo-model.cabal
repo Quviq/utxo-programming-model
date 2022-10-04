@@ -68,6 +68,7 @@ common lang
     MultiWayIf
     DataKinds
     LinearTypes
+    QuantifiedConstraints
 
 library
     -- Import common warning flags.

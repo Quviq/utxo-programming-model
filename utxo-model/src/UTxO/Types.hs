@@ -3,9 +3,12 @@ module UTxO.Types where
 
 import Data.Typeable
 
+data Dict c where
+  Dict :: c => Dict c
+
 -- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
 data TList2 :: (* -> * -> *) -> [*] -> * where
-  Nil :: TList2 f '[]
+  Nil  :: TList2 f '[]
   Cons :: f a b %1 -> TList2 f ts %1 -> TList2 f ((a, b) : ts)
 
 tList2Append :: TList2 f xs %1 -> TList2 f ys %1 -> TList2 f (Append xs ys)
@@ -42,3 +45,7 @@ appendAssocProof = case materialize @a of
   SingletonNil -> Refl
   SingletonCons @_ @as
     | Refl <- appendAssocProof @as @b @c -> Refl
+
+appendTypeListDict :: forall as bs. (IsTypeList as, IsTypeList bs)
+                   => Dict (IsTypeList (Append as bs))
+appendTypeListDict = error "TODO"

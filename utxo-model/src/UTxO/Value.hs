@@ -12,6 +12,9 @@ data ValueKey = Ada
 newtype Value = Value { unValue :: Map ValueKey Integer }
               deriving (Ord, Show)
 
+leq :: Value -> Value -> Bool
+v `leq` v' = all (<= 0) $ unValue (v ~~ v')
+
 instance Eq Value where
   v == v' = all (==0) $ unValue (v ~~ v')
 

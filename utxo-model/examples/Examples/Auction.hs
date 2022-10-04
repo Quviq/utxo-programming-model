@@ -21,7 +21,7 @@ setup sign value utxo =
                           , winningBid   = mempty
                           , forSale      = value
                           }
-  in (mkScriptUTxO value datum, spendFrom sign value utxo)
+  in (mkScriptUTxO value datum, spendFromUTxO sign value utxo)
 
 bid :: IsOwner owner
     => Signature owner
@@ -32,6 +32,6 @@ bid :: IsOwner owner
        , Maybe (UTxO AnyOwner ())
        , Maybe (UTxO owner ()))
 bid sign auctionUTxO utxo bid =
- let' (addressOf utxo)                $ \ (Ur addr, utxo) ->
- let' (bidInner auctionUTxO bid addr) $ \ (auctionUTxO', paybackUTxO) ->
- (auctionUTxO', paybackUTxO, spendFrom sign bid utxo)
+  let' (addressOf utxo)                $ \ (Ur addr, utxo) ->
+  let' (bidInner auctionUTxO bid addr) $ \ (auctionUTxO', paybackUTxO) ->
+  (auctionUTxO', paybackUTxO, spendFromUTxO sign bid utxo)

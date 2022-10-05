@@ -11,13 +11,13 @@ import Data.Unrestricted.Linear
 import Examples.Auction.Trusted
 
 setup :: Signature PubKeyOwner
+      -> PubKeyHash
       -> Value
       -> UTxO PubKeyOwner ()
    %1 -> (UTxO Auction AuctionData, Maybe (UTxO PubKeyOwner ()))
-setup sign value utxo =
-  let' (addressOf utxo) $ \ (Ur (Wallet hash), utxo) ->
-  let datum = AuctionData { winner       = Wallet hash
-                          , auctionOwner = hash
+setup sign pkh value utxo =
+  let datum = AuctionData { winner       = Wallet pkh
+                          , auctionOwner = pkh
                           , winningBid   = mempty
                           , forSale      = value
                           }
@@ -41,7 +41,7 @@ runSetupTx :: PubKeyHash
            -> SmartContract (UTxORef Auction AuctionData)
 runSetupTx pkh value = do
   utxo <- findWalletUTxOWhere pkh (value `leq`)
-  let setupTx = withSignature pkh $ \sig -> tx $ setup sig value
+  let setupTx = withSignature pkh $ \sig -> tx $ setup sig pkh value
   fst <$> submit setupTx utxo
 
 runBidTx :: PubKeyHash

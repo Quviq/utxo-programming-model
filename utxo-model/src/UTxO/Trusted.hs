@@ -31,6 +31,8 @@ module UTxO.Trusted
   , submitTx
   , lookupUTxO
   , index
+  , awaitTime
+  , onWallet
   -- * Semantics
   , Chain(..)
   , runSmartContract
@@ -179,6 +181,10 @@ data SmartContract a where
             -> SmartContract a
             -> SmartContract a
 
+  OnWallet :: PubKeyHash
+           -> SmartContract a
+           -> SmartContract a
+
 transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
 transform = Transform
 
@@ -205,6 +211,9 @@ lookupUTxO ref = Observe ref Done
 awaitTime :: Time -> SmartContract ()
 awaitTime t = AwaitTime t (Done ())
 
+onWallet :: PubKeyHash -> SmartContract a -> SmartContract a
+onWallet = OnWallet
+
 instance Functor SmartContract where
   fmap = liftM
 
@@ -219,6 +228,7 @@ instance Monad SmartContract where
   Observe r c    >>= k = Observe r (c >=> k)
   Fail s         >>= _ = Fail s
   AwaitTime t c  >>= k = AwaitTime t (c >>= k)
+  OnWallet pkh c >>= k = OnWallet pkh (c >>= k)
 
 instance MonadFail SmartContract where
   fail = Fail
@@ -233,8 +243,9 @@ data SomeUTxO where
            -> SomeUTxO
 
 data EmulationState = EmulationState
-  { _utxos       :: Map Int SomeUTxO
-  , _currentTime :: Time
+  { _utxos         :: Map Int SomeUTxO
+  , _currentTime   :: Time
+  , _currentWallet :: Maybe PubKeyHash
   }
 makeLenses ''EmulationState
 
@@ -276,3 +287,18 @@ runSmartContract sc = case sc of
   AwaitTime t c -> do
     currentTime %= max t
     runSmartContract c
+
+  OnWallet pkh c -> do
+    wallet <- use currentWallet
+    a <- case wallet of
+      Just pkh'
+        | pkh /= pkh' ->
+          throwE $ "Trying to run on wallet "
+                 ++ show pkh
+                 ++ " inside a call to onWallet on wallet "
+                 ++ show pkh'
+      _ -> do
+        currentWallet .= Just pkh
+        runSmartContract c
+    currentWallet .= wallet
+    return a

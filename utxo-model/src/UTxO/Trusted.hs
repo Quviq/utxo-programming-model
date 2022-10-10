@@ -140,29 +140,44 @@ type UTxORefs = TList2 UTxORef
 type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
 data TxRep inputs outputs where
-  Transform     :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
-  WithSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep inputs outputs) -> TxRep inputs outputs
-  WithTime      :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
+  Transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs)
+            -> TxRep inputs outputs
+
+  WithSignature :: PubKeyHash
+                -> (Signature PubKeyOwner -> TxRep inputs outputs)
+                -> TxRep inputs outputs
+
+  WithTime :: Time
+           -> Time
+           -> (TrueTime -> TxRep inputs outputs)
+           -> TxRep inputs outputs
 
 data SmartContract a where
-  Done    :: a
-          -> SmartContract a
-  Submit  :: TxRep inputs outputs
-          -> UTxORefs inputs
-          -> (MaybeUTxORefs outputs -> SmartContract a)
-          -> SmartContract a
+  Done :: a -> SmartContract a
+
+  Submit :: TxRep inputs outputs
+         -> UTxORefs inputs
+         -> (MaybeUTxORefs outputs -> SmartContract a)
+         -> SmartContract a
+
   UTxOsAt :: forall (owner :: *) (datum :: *) (a :: *).
              (Typeable datum, IsOwner owner)
           => Address
           -> ([UTxORef owner datum] -> SmartContract a)
           -> SmartContract a
+
   Observe :: forall (owner :: *) (datum :: *) (a :: *).
              (Typeable owner, Typeable datum)
           => UTxORef owner datum
           -> (Maybe (Address, Value, datum) -> SmartContract a)
           -> SmartContract a
-  Fail    :: String
-          -> SmartContract a
+
+  Fail :: String
+       -> SmartContract a
+
+  AwaitTime :: Time
+            -> SmartContract a
+            -> SmartContract a
 
 transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
 transform = Transform
@@ -187,6 +202,9 @@ lookupUTxO :: forall (owner :: *) (datum :: *).
            -> SmartContract (Maybe (Address, Value, datum))
 lookupUTxO ref = Observe ref Done
 
+awaitTime :: Time -> SmartContract ()
+awaitTime t = AwaitTime t (Done ())
+
 instance Functor SmartContract where
   fmap = liftM
 
@@ -200,6 +218,7 @@ instance Monad SmartContract where
   UTxOsAt a c    >>= k = UTxOsAt a (c >=> k)
   Observe r c    >>= k = Observe r (c >=> k)
   Fail s         >>= _ = Fail s
+  AwaitTime t c  >>= k = AwaitTime t (c >>= k)
 
 instance MonadFail SmartContract where
   fail = Fail
@@ -213,16 +232,23 @@ data SomeUTxO where
            -> datum
            -> SomeUTxO
 
-data Chain = Chain { _utxos :: Map Int SomeUTxO }
-makeLenses ''Chain
+data EmulationState = EmulationState
+  { _utxos       :: Map Int SomeUTxO
+  , _currentTime :: Time
+  }
+makeLenses ''EmulationState
 
-runSmartContract :: SmartContract a -> ExceptT String (State Chain) a
+type Semantics = ExceptT String (State EmulationState)
+
+runSmartContract :: SmartContract a -> Semantics a
 runSmartContract sc = case sc of
-  Done a         -> do
+  Done a -> do
     return a
+
   Submit tx is c -> do
     a <- _
     runSmartContract (c a)
+
   UTxOsAt @owner @datum addr c -> do
     let mOwner = fresh @owner addr
     case mOwner of
@@ -235,6 +261,7 @@ runSmartContract sc = case sc of
                              ]
       _ -> do
         runSmartContract $ c []
+
   Observe @owner @datum r c -> do
     mUTxO <- use $ utxos . at (getRef r)
     runSmartContract . c $ do
@@ -242,5 +269,10 @@ runSmartContract sc = case sc of
       Refl                             <- eqT @owner @owner'
       Refl                             <- eqT @datum @datum'
       return (a, v, d)
-  Fail s         -> do
+
+  Fail s -> do
     throwE s
+
+  AwaitTime t c -> do
+    currentTime %= max t
+    runSmartContract c

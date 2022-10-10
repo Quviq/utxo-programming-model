@@ -31,11 +31,18 @@ module UTxO.Trusted
   , submitTx
   , lookupUTxO
   , index
+  -- * Semantics
+  , Chain(..)
+  , runSmartContract
   ) where
 
 import Control.Monad
+import Control.Monad.State
+import Control.Monad.Trans.Except
 
 import Data.Typeable
+import Data.Map (Map)
+import Data.Map qualified as Map
 
 import UTxO.Value
 import UTxO.Types
@@ -189,3 +196,16 @@ instance Monad SmartContract where
 
 instance MonadFail SmartContract where
   fail = Fail
+
+data SomeUTxO where
+  SomeUTxO :: (Typeable owner, Typeable datum)
+           => Proxy owner
+           -> Address
+           -> Value
+           -> datum
+           -> SomeUTxO
+
+newtype Chain = Chain { unChain :: Map Int SomeUTxO }
+
+runSmartContract :: SmartContract a -> ExceptT String (State Chain) a
+runSmartContract = undefined

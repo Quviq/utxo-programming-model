@@ -268,6 +268,9 @@ runSubmitTx tx inputs = case tx of
     -- nice.
     else return $ allNothings @outputs
 
+allNothings :: MaybeUTxORefs outputs
+allNothings = error "TODO: this is tricky to implement in the current setup - will be easy later"
+
 runSmartContract :: SmartContract a -> Semantics a
 runSmartContract sc = case sc of
   Done a -> do

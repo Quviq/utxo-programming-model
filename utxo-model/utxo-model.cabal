@@ -69,6 +69,7 @@ common lang
     DataKinds
     LinearTypes
     QuantifiedConstraints
+    TemplateHaskell
 
 library
     -- Import common warning flags.
@@ -97,7 +98,8 @@ library
       groups,
       linear-base,
       mtl,
-      transformers
+      transformers,
+      lens
 
     -- Directories containing source files.
     hs-source-dirs:

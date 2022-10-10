@@ -36,6 +36,7 @@ module UTxO.Trusted
   , runSmartContract
   ) where
 
+import Control.Lens
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Except
@@ -150,10 +151,14 @@ data SmartContract a where
           -> UTxORefs inputs
           -> (MaybeUTxORefs outputs -> SmartContract a)
           -> SmartContract a
-  UTxOsAt :: Address
-          -> ([UTxORef AnyOwner datum] -> SmartContract a)
+  UTxOsAt :: forall (owner :: *) (datum :: *) (a :: *).
+             (Typeable datum, IsOwner owner)
+          => Address
+          -> ([UTxORef owner datum] -> SmartContract a)
           -> SmartContract a
-  Observe :: UTxORef owner datum
+  Observe :: forall (owner :: *) (datum :: *) (a :: *).
+             (Typeable owner, Typeable datum)
+          => UTxORef owner datum
           -> (Maybe (Address, Value, datum) -> SmartContract a)
           -> SmartContract a
   Fail    :: String
@@ -171,13 +176,15 @@ withTime = WithTime
 submitTx :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (MaybeUTxORefs outputs)
 submitTx tx is = Submit tx is Done
 
-index :: forall owner datum. IsOwner owner => Address -> SmartContract [UTxORef owner datum]
-index addr
-  | Just owner <- fresh @owner addr
-  , isAddressOf addr owner = UTxOsAt addr $ Done . map coerceUTxORef
-  | otherwise = return []
+index :: forall (owner :: *) (datum :: *). (Typeable datum, IsOwner owner)
+      => Address
+      -> SmartContract [UTxORef owner datum]
+index addr = UTxOsAt addr Done
 
-lookupUTxO :: UTxORef owner datum -> SmartContract (Maybe (Address, Value, datum))
+lookupUTxO :: forall (owner :: *) (datum :: *).
+              (Typeable owner, Typeable datum)
+           => UTxORef owner datum
+           -> SmartContract (Maybe (Address, Value, datum))
 lookupUTxO ref = Observe ref Done
 
 instance Functor SmartContract where
@@ -198,14 +205,42 @@ instance MonadFail SmartContract where
   fail = Fail
 
 data SomeUTxO where
-  SomeUTxO :: (Typeable owner, Typeable datum)
+  SomeUTxO :: forall (owner :: *) (datum :: *).
+              (Typeable owner, Typeable datum)
            => Proxy owner
            -> Address
            -> Value
            -> datum
            -> SomeUTxO
 
-newtype Chain = Chain { unChain :: Map Int SomeUTxO }
+data Chain = Chain { _utxos :: Map Int SomeUTxO }
+makeLenses ''Chain
 
 runSmartContract :: SmartContract a -> ExceptT String (State Chain) a
-runSmartContract = undefined
+runSmartContract sc = case sc of
+  Done a         -> do
+    return a
+  Submit tx is c -> do
+    a <- _
+    runSmartContract (c a)
+  UTxOsAt @owner @datum addr c -> do
+    let mOwner = fresh @owner addr
+    case mOwner of
+      Just owner | isAddressOf addr owner -> do
+        utxoList <- use $ utxos . to Map.toList
+        runSmartContract $ c [ UTxORef i
+                             | (i, SomeUTxO @_ @datum' _ a _ d) <- utxoList
+                             , a == addr
+                             , Just Refl <- [eqT @datum @datum']
+                             ]
+      _ -> do
+        runSmartContract $ c []
+  Observe @owner @datum r c -> do
+    mUTxO <- use $ utxos . at (getRef r)
+    runSmartContract . c $ do
+      SomeUTxO @owner' @datum' o a v d <- mUTxO
+      Refl                             <- eqT @owner @owner'
+      Refl                             <- eqT @datum @datum'
+      return (a, v, d)
+  Fail s         -> do
+    throwE s

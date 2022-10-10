@@ -244,6 +244,7 @@ data SomeUTxO where
 
 data EmulationState = EmulationState
   { _utxos         :: Map Int SomeUTxO
+  , _stxos         :: Map Int SomeUTxO
   , _currentTime   :: Time
   , _currentWallet :: Maybe PubKeyHash
   }
@@ -251,13 +252,29 @@ makeLenses ''EmulationState
 
 type Semantics = ExceptT String (State EmulationState)
 
+runSubmitTx :: forall inputs outputs.
+               TxRep inputs outputs
+            -> UTxORefs inputs
+            -> Semantics (MaybeUTxORefs outputs)
+runSubmitTx tx inputs = case tx of
+  Transform fun         -> _
+  WithSignature pkh fun -> _
+  WithTime t0 t1 fun    -> do
+    t <- currentTime
+    if t0 <= t && t <= t1
+    then runSubmitTx (fun $ TrueTime t0 t1)
+    -- TODO: implement this - ghc makes this harder than it looks unfortunately!
+    -- We need to revamp the whole type directed machinery to make all this
+    -- nice.
+    else return $ allNothings @outputs
+
 runSmartContract :: SmartContract a -> Semantics a
 runSmartContract sc = case sc of
   Done a -> do
     return a
 
   Submit tx is c -> do
-    a <- _
+    a <- runSubmitTx tx is
     runSmartContract (c a)
 
   UTxOsAt @owner @datum addr c -> do

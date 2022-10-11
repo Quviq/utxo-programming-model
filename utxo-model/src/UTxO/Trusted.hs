@@ -197,6 +197,17 @@ class IsTx t where
                                        -> m (UTxORef owner datum))
                   -> Output t -> m (OutputRefs t)
 
+instance (Typeable owner, Typeable datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
+
+  type InputRefs (UTxO owner datum %1 -> t) = (UTxORef owner datum, InputRefs t)
+  type Inputs    (UTxO owner datum %1 -> t) = (UTxO owner datum,    Inputs t)
+
+  type Output    (UTxO owner datum %1 -> t) = Output t
+
+  lookupRefs env (UTxORef i, refs) = (,) <$> (unwrapUTxO =<< Map.lookup i env) <*> lookupRefs @t env refs
+
+  txFun f (input, inputs) = _
+
 transform :: t -> TxRep t
 transform = Transform
 
@@ -253,6 +264,12 @@ data SomeUTxO where
            -> Value
            -> datum
            -> SomeUTxO
+
+wrapUTxO :: (Typeable owner, Typeable datum) => UTxO owner datum -> SomeUTxO
+wrapUTxO (UTxO owner addr val datum) = SomeUTxO owner addr val datum
+
+unwrapUTxO :: (Typeable owner, Typeable datum) => SomeUTxO -> Maybe (UTxO owner datum)
+unwrapUTxO (SomeUTxO owner addr val datum) = cast (UTxO owner addr val datum)
 
 data EmulationState = EmulationState
   { _utxos         :: Map Int SomeUTxO

@@ -20,11 +20,7 @@ module UTxO.Trusted
   -- * Writing smart contracts
   , SmartContract
   , TxRep
-  , UTxOs
-  , MaybeUTxOs
   , UTxORef(..)
-  , UTxORefs
-  , MaybeUTxORefs
   , transform
   , withSignature
   , withTime
@@ -34,13 +30,14 @@ module UTxO.Trusted
   , awaitTime
   , onWallet
   -- * Semantics
-  , Chain(..)
+  , EmulationState(..)
   , runSmartContract
   ) where
 
-import Control.Lens
+import Control.Lens hiding (index, transform)
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Monad.Trans.Except
 
 import Data.Typeable
@@ -51,7 +48,7 @@ import UTxO.Value
 import UTxO.Types
 
 import Unsafe.Linear qualified as Unsafe
-import Data.Unrestricted.Linear
+import Data.Unrestricted.Linear hiding (lift)
 
 newtype PubKeyHash = PubKeyHash { unPubKeyHash :: Int }
   deriving (Ord, Eq, Show)
@@ -129,37 +126,37 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- stage of transformation per transaction:
 -- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType
 
-type UTxOs = TList2 UTxO
-type MaybeUTxOs = TList2 (MaybeF2 UTxO)
+-- type UTxOs = TList2 UTxO
+-- type MaybeUTxOs = TList2 (MaybeF2 UTxO)
 
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
 
 -- TODO: is this safe? We need to write down how these owner tricks work!
-coerceUTxORef :: UTxORef AnyOwner datum -> UTxORef owner datum
-coerceUTxORef = UTxORef . getRef
+-- coerceUTxORef :: UTxORef AnyOwner datum -> UTxORef owner datum
+-- coerceUTxORef = UTxORef . getRef
 
-type UTxORefs = TList2 UTxORef
-type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
+-- type UTxORefs = TList2 UTxORef
+-- type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
-data TxRep inputs outputs where
-  Transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs)
-            -> TxRep inputs outputs
+data TxRep t where
+  Transform :: t -> TxRep t
 
   WithSignature :: PubKeyHash
-                -> (Signature PubKeyOwner -> TxRep inputs outputs)
-                -> TxRep inputs outputs
+                -> (Signature PubKeyOwner -> TxRep t)
+                -> TxRep t
 
   WithTime :: Time
            -> Time
-           -> (TrueTime -> TxRep inputs outputs)
-           -> TxRep inputs outputs
+           -> (TrueTime -> TxRep t)
+           -> TxRep t
 
 data SmartContract a where
   Done :: a -> SmartContract a
 
-  Submit :: TxRep inputs outputs
-         -> UTxORefs inputs
-         -> (MaybeUTxORefs outputs -> SmartContract a)
+  Submit :: IsTx t
+         => TxRep t
+         -> InputRefs t
+         -> (OutputRefs t -> SmartContract a)
          -> SmartContract a
 
   UTxOsAt :: forall (owner :: *) (datum :: *) (a :: *).
@@ -185,16 +182,31 @@ data SmartContract a where
            -> SmartContract a
            -> SmartContract a
 
-transform :: (UTxOs inputs %1 -> MaybeUTxOs outputs) -> TxRep inputs outputs
+class IsTx t where
+  type InputRefs  t :: *
+  type Inputs     t :: *
+  type Output     t :: *
+  type OutputRefs t :: *
+
+  lookupRefs :: Map Int SomeUTxO -> InputRefs t -> Maybe (Inputs t)
+  txFun      :: t %1 -> Inputs t %1 -> Output t
+
+  traverseOutputs :: Applicative m
+                  => (forall owner datum. (Typeable owner, Typeable datum)
+                                       => UTxO owner datum
+                                       -> m (UTxORef owner datum))
+                  -> Output t -> m (OutputRefs t)
+
+transform :: t -> TxRep t
 transform = Transform
 
-withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep inputs outputs) -> TxRep inputs outputs
+withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep t) -> TxRep t
 withSignature = WithSignature
 
-withTime :: Time -> Time -> (TrueTime -> TxRep inputs outputs) -> TxRep inputs outputs
+withTime :: Time -> Time -> (TrueTime -> TxRep t) -> TxRep t
 withTime = WithTime
 
-submitTx :: TxRep inputs outputs -> UTxORefs inputs -> SmartContract (MaybeUTxORefs outputs)
+submitTx :: IsTx t => TxRep t -> InputRefs t -> SmartContract (OutputRefs t)
 submitTx tx is = Submit tx is Done
 
 index :: forall (owner :: *) (datum :: *). (Typeable datum, IsOwner owner)
@@ -236,7 +248,7 @@ instance MonadFail SmartContract where
 data SomeUTxO where
   SomeUTxO :: forall (owner :: *) (datum :: *).
               (Typeable owner, Typeable datum)
-           => Proxy owner
+           => owner
            -> Address
            -> Value
            -> datum
@@ -247,29 +259,45 @@ data EmulationState = EmulationState
   , _stxos         :: Map Int SomeUTxO
   , _currentTime   :: Time
   , _currentWallet :: Maybe PubKeyHash
+  , _nextRef       :: Int
   }
 makeLenses ''EmulationState
 
 type Semantics = ExceptT String (State EmulationState)
 
-runSubmitTx :: forall inputs outputs.
-               TxRep inputs outputs
-            -> UTxORefs inputs
-            -> Semantics (MaybeUTxORefs outputs)
+freshRef :: Semantics Int
+freshRef = do
+  r <- use nextRef
+  nextRef += 1
+  pure r
+
+runSubmitTx :: forall t. IsTx t
+            => TxRep t
+            -> InputRefs t
+            -> Semantics (OutputRefs t)
 runSubmitTx tx inputs = case tx of
-  Transform fun         -> _
-  WithSignature pkh fun -> _
+  Transform fun         -> do
+    inRefs <- use utxos
+    case lookupRefs @t inRefs inputs of
+      Nothing -> throwE "Bad refs"
+      Just inputs -> do
+        let out = txFun @t fun inputs
+            allocateRef (UTxO owner addr val datum) = do
+              i <- lift freshRef
+              utxos %= Map.insert i (SomeUTxO owner addr val datum)
+              tell val
+              pure $ UTxORef i
+        (outRefs, _outVal) <- runWriterT $ traverseOutputs @t allocateRef out
+        -- TODO: force and catch errors
+        -- TODO: Check balancedness
+        -- TODO: Move inputs to spent utxos
+        pure outRefs
+  WithSignature _pkh _fun -> error "TODO"
   WithTime t0 t1 fun    -> do
     t <- use currentTime
     if t0 <= t && t <= t1
     then runSubmitTx (fun $ TrueTime t0 t1) inputs
-    -- TODO: implement this - ghc makes this harder than it looks unfortunately!
-    -- We need to revamp the whole type directed machinery to make all this
-    -- nice.
-    else return $ allNothings @outputs
-
-allNothings :: MaybeUTxORefs outputs
-allNothings = error "TODO: this is tricky to implement in the current setup - will be easy later"
+    else throwE "Not in correct time slot"
 
 runSmartContract :: SmartContract a -> Semantics a
 runSmartContract sc = case sc of
@@ -286,7 +314,7 @@ runSmartContract sc = case sc of
       Just owner | isAddressOf addr owner -> do
         utxoList <- use $ utxos . to Map.toList
         runSmartContract $ c [ UTxORef i
-                             | (i, SomeUTxO @_ @datum' _ a _ d) <- utxoList
+                             | (i, SomeUTxO @_ @datum' _ a _ _d) <- utxoList
                              , a == addr
                              , Just Refl <- [eqT @datum @datum']
                              ]
@@ -296,7 +324,7 @@ runSmartContract sc = case sc of
   Observe @owner @datum r c -> do
     mUTxO <- use $ utxos . at (getRef r)
     runSmartContract . c $ do
-      SomeUTxO @owner' @datum' o a v d <- mUTxO
+      SomeUTxO @owner' @datum' _ a v d <- mUTxO
       Refl                             <- eqT @owner @owner'
       Refl                             <- eqT @datum @datum'
       return (a, v, d)

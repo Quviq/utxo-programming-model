@@ -6,20 +6,30 @@ import Data.Typeable
 data Dict c where
   Dict :: c => Dict c
 
--- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
-data TList2 :: (* -> * -> *) -> [*] -> * where
-  Nil  :: TList2 f '[]
-  Cons :: f a b %1 -> TList2 f ts %1 -> TList2 f ((a, b) : ts)
+-- data List2 a b = Nil2 | Cons2 a b (List2 a b)
 
-tList2Append :: TList2 f xs %1 -> TList2 f ys %1 -> TList2 f (Append xs ys)
-tList2Append Nil xs         = xs
-tList2Append (Cons f xs) ys = Cons f (tList2Append xs ys)
+-- Just a little bit of dependent types bro. It won't hurt you bro. Just try it bro.
+-- data TList2 :: (* -> * -> *) -> List2 * * -> * where
+--   Nil  :: TList  'Nil2
+--   Cons :: f a b %1 -> TList  ts %1 -> TList  ('Cons2 a b ts)
+
+data TList :: [*] -> * where
+  Nil  :: TList '[]
+  Cons :: a %1 -> TList as %1 -> TList (a ': as)
+
+-- tList2Append :: TList  xs %1 -> TList  ys %1 -> TList  (Append xs ys)
+-- tList2Append Nil xs         = xs
+-- tList2Append (Cons f xs) ys = Cons f (tList2Append xs ys)
+
+tListAppend :: TList xs %1 -> TList ys %1 -> TList (Append xs ys)
+tListAppend Nil         ys = ys
+tListAppend (Cons x xs) ys = Cons x (tListAppend xs ys)
 
 type family Append (xs :: [*]) (ys :: [*]) :: [*] where
   Append '[] xs      = xs
   Append (x : xs) ys = x : (Append xs ys)
 
-newtype MaybeF2 f a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
+-- newtype MaybeF  a b = MaybeF2 { unMaybeF2 :: Maybe (f a b) }
 
 data SingletonList (ts :: [*]) where
   SingletonNil  :: SingletonList '[]

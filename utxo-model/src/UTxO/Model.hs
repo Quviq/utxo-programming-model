@@ -194,7 +194,7 @@ instance (IsTypeList (Append (Outputs a) (Append (Outputs b) (Outputs c))), Resu
       in ((a, b, c), xs''')
 
 type family Inputs a :: [*] where
-  Inputs (UTxO owner datum %1 -> a) = (owner, datum) : Inputs a
+  Inputs (UTxO owner datum %1 -> a) = UTxO owner datum : Inputs a
   Inputs _                          = '[]
 
 type family (is :: [*]) :-> (t :: *) :: * where
@@ -211,7 +211,7 @@ funAppendDecomposeProof :: forall is is' t. (is :-> (is' :-> t)) :~: (Append is 
 funAppendDecomposeProof = undefined
 
 class Result (ResultOf t) => IsTx t where
-  txFun :: t %1 -> UTxOs (Inputs t) %1 -> MaybeUTxOs (Outputs (ResultOf t))
+  txFun :: t %1 -> TList (Inputs t) %1 -> MaybeUTxOs (Outputs (ResultOf t))
   submitInternal :: forall is. (IsTypeList is, Inputs (is :-> t) ~ Append is (Inputs t), ResultOf (is :-> t) ~ ResultOf t)
                  => Transaction (is :-> t)
                  -> UTxORefs is

@@ -70,6 +70,7 @@ common lang
     LinearTypes
     QuantifiedConstraints
     TemplateHaskell
+    LambdaCase
 
 library
     -- Import common warning flags.

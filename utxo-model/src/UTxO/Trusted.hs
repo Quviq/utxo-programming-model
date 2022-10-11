@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 module UTxO.Trusted
   ( -- * Writing Validators
     PubKeyHash(..)
@@ -19,9 +20,11 @@ module UTxO.Trusted
   , upperBound
   -- * Writing smart contracts
   , SmartContract
-  , TxRep
+  , Transaction
   , UTxORef(..)
-  , transform
+  , IsTx(..)
+  , SubmitType
+  , tx
   , withSignature
   , withTime
   , submitTx
@@ -34,7 +37,7 @@ module UTxO.Trusted
   , runSmartContract
   ) where
 
-import Control.Lens hiding (index, transform)
+import Control.Lens hiding (index)
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Writer
@@ -45,7 +48,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 
 import UTxO.Value
-import UTxO.Types
+-- import UTxO.Types
 
 import Unsafe.Linear qualified as Unsafe
 import Data.Unrestricted.Linear hiding (lift)
@@ -124,7 +127,7 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- the same call to `submitTx`. However, if we type index UTxOs by a "phase" - giving us an
 -- "input utxo" and an "output utxo" type we would be able to enforce only one
 -- stage of transformation per transaction:
--- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TxRepType
+-- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TransactionType
 
 -- type UTxOs = TList2 UTxO
 -- type MaybeUTxOs = TList2 (MaybeF2 UTxO)
@@ -138,23 +141,23 @@ newtype UTxORef owner datum = UTxORef { getRef :: Int }
 -- type UTxORefs = TList2 UTxORef
 -- type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
-data TxRep t where
-  Transform :: t -> TxRep t
+data Transaction t where
+  Transform :: t -> Transaction t
 
   WithSignature :: PubKeyHash
-                -> (Signature PubKeyOwner -> TxRep t)
-                -> TxRep t
+                -> (Signature PubKeyOwner -> Transaction t)
+                -> Transaction t
 
   WithTime :: Time
            -> Time
-           -> (TrueTime -> TxRep t)
-           -> TxRep t
+           -> (TrueTime -> Transaction t)
+           -> Transaction t
 
 data SmartContract a where
   Done :: a -> SmartContract a
 
   Submit :: IsTx t
-         => TxRep t
+         => Transaction t
          -> InputRefs t
          -> (OutputRefs t -> SmartContract a)
          -> SmartContract a
@@ -182,43 +185,81 @@ data SmartContract a where
            -> SmartContract a
            -> SmartContract a
 
-class IsTx t where
-  type InputRefs  t :: *
-  type Inputs     t :: *
-  type Output     t :: *
-  type OutputRefs t :: *
+type family InputRefs t where
+  InputRefs (UTxO owner datum %1 -> t) = (UTxORef owner datum, InputRefs t)
+  InputRefs t                          = ()
 
+type family Inputs t where
+  Inputs (UTxO owner datum %1 -> t) = (UTxO owner datum, Inputs t)
+  Inputs t                          = ()
+
+type family Output t where
+  Output (UTxO owner datum %1 -> t) = Output t
+  Output t                          = t
+
+type family SubmitType t where
+  SubmitType (UTxO owner datum %1 -> t) = UTxORef owner datum -> SubmitType t
+  SubmitType t                          = SmartContract (Refs t)
+
+class IsOutput (Output t) => IsTx t where
   lookupRefs :: Map Int SomeUTxO -> InputRefs t -> Maybe (Inputs t)
   txFun      :: t %1 -> Inputs t %1 -> Output t
+  submitTx'  :: (IsTx top, OutputRefs top ~ OutputRefs t)
+             => Transaction top
+             -> (InputRefs t -> InputRefs top)
+             -> SubmitType t
 
-  traverseOutputs :: Applicative m
-                  => (forall owner datum. (Typeable owner, Typeable datum)
-                                       => UTxO owner datum
-                                       -> m (UTxORef owner datum))
-                  -> Output t -> m (OutputRefs t)
+type OutputRefs t = Refs (Output t)
 
-instance (Typeable owner, Typeable datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
+class (Output t ~ t, Inputs t ~ (), InputRefs t ~ (), SubmitType t ~ SmartContract (Refs t)) => IsOutput t where
+  type Refs t :: *
+  traverseOutput :: Applicative m
+                 => (forall owner datum. (Typeable owner, Typeable datum)
+                                      => UTxO owner datum
+                                      -> m (UTxORef owner datum))
+                 -> t -> m (Refs t)
 
-  type InputRefs (UTxO owner datum %1 -> t) = (UTxORef owner datum, InputRefs t)
-  type Inputs    (UTxO owner datum %1 -> t) = (UTxO owner datum,    Inputs t)
-
-  type Output    (UTxO owner datum %1 -> t) = Output t
-
+instance {-# OVERLAPPING #-} (Typeable owner, Typeable datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
   lookupRefs env (UTxORef i, refs) = (,) <$> (unwrapUTxO =<< Map.lookup i env) <*> lookupRefs @t env refs
+  txFun f (input, inputs) = txFun (f input) inputs
+  submitTx' rep k input = submitTx' @t rep (k . (input,))
 
-  txFun f (input, inputs) = _
+instance {-# OVERLAPPABLE #-} IsOutput t => IsTx t where
+  lookupRefs _ () = pure ()
+  txFun t () = t
+  submitTx' rep k = Submit rep (k ()) Done
 
-transform :: t -> TxRep t
-transform = Transform
+instance (Typeable owner, Typeable datum) => IsOutput (UTxO owner datum) where
+  type Refs (UTxO owner datum) = UTxORef owner datum
+  traverseOutput f = f
 
-withSignature :: PubKeyHash -> (Signature PubKeyOwner -> TxRep t) -> TxRep t
+instance IsOutput t => IsOutput (Maybe t) where
+  type Refs (Maybe t) = Maybe (Refs t)
+  traverseOutput f = traverse (traverseOutput f)
+
+instance IsOutput t => IsOutput [t] where
+  type Refs [t] = [Refs t]
+  traverseOutput f = traverse (traverseOutput f)
+
+instance (IsOutput a, IsOutput b) => IsOutput (a, b) where
+  type Refs (a, b) = (Refs a, Refs b)
+  traverseOutput f (a, b) = (,) <$> traverseOutput f a <*> traverseOutput f b
+
+instance (IsOutput a, IsOutput b, IsOutput c) => IsOutput (a, b, c) where
+  type Refs (a, b, c) = (Refs a, Refs b, Refs c)
+  traverseOutput f (a, b, c) = (,,) <$> traverseOutput f a <*> traverseOutput f b <*> traverseOutput f c
+
+tx :: t -> Transaction t
+tx = Transform
+
+withSignature :: PubKeyHash -> (Signature PubKeyOwner -> Transaction t) -> Transaction t
 withSignature = WithSignature
 
-withTime :: Time -> Time -> (TrueTime -> TxRep t) -> TxRep t
+withTime :: Time -> Time -> (TrueTime -> Transaction t) -> Transaction t
 withTime = WithTime
 
-submitTx :: IsTx t => TxRep t -> InputRefs t -> SmartContract (OutputRefs t)
-submitTx tx is = Submit tx is Done
+submitTx :: forall t. IsTx t => Transaction t -> SubmitType t
+submitTx rep = submitTx' @t rep id
 
 index :: forall (owner :: *) (datum :: *). (Typeable datum, IsOwner owner)
       => Address
@@ -265,8 +306,8 @@ data SomeUTxO where
            -> datum
            -> SomeUTxO
 
-wrapUTxO :: (Typeable owner, Typeable datum) => UTxO owner datum -> SomeUTxO
-wrapUTxO (UTxO owner addr val datum) = SomeUTxO owner addr val datum
+-- wrapUTxO :: (Typeable owner, Typeable datum) => UTxO owner datum -> SomeUTxO
+-- wrapUTxO (UTxO owner addr val datum) = SomeUTxO owner addr val datum
 
 unwrapUTxO :: (Typeable owner, Typeable datum) => SomeUTxO -> Maybe (UTxO owner datum)
 unwrapUTxO (SomeUTxO owner addr val datum) = cast (UTxO owner addr val datum)
@@ -289,7 +330,7 @@ freshRef = do
   pure r
 
 runSubmitTx :: forall t. IsTx t
-            => TxRep t
+            => Transaction t
             -> InputRefs t
             -> Semantics (OutputRefs t)
 runSubmitTx tx inputs = case tx of
@@ -304,7 +345,7 @@ runSubmitTx tx inputs = case tx of
               utxos %= Map.insert i (SomeUTxO owner addr val datum)
               tell val
               pure $ UTxORef i
-        (outRefs, _outVal) <- runWriterT $ traverseOutputs @t allocateRef out
+        (outRefs, _outVal) <- runWriterT $ traverseOutput @(Output t) allocateRef out
         -- TODO: force and catch errors
         -- TODO: Check balancedness
         -- TODO: Move inputs to spent utxos

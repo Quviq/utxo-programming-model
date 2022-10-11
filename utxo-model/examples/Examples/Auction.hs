@@ -42,7 +42,7 @@ runSetupTx :: PubKeyHash
 runSetupTx pkh value = do
   utxo <- findWalletUTxOWhere pkh (value `leq`)
   let setupTx = withSignature pkh $ \sig -> tx $ setup sig pkh value
-  fst <$> submit setupTx utxo
+  fst <$> submitTx setupTx utxo
 
 runBidTx :: PubKeyHash
          -> Value
@@ -51,5 +51,5 @@ runBidTx :: PubKeyHash
 runBidTx pkh myBid auctionUTxO = do
   utxo <- findWalletUTxOWhere pkh (myBid `leq`)
   let bidTx = withSignature pkh $ \sign -> tx $ bid sign myBid
-  (auctionUTxO, _, _) <- submit bidTx auctionUTxO utxo
+  (auctionUTxO, _, _) <- submitTx bidTx auctionUTxO utxo
   return auctionUTxO

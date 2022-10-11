@@ -260,9 +260,9 @@ runSubmitTx tx inputs = case tx of
   Transform fun         -> _
   WithSignature pkh fun -> _
   WithTime t0 t1 fun    -> do
-    t <- currentTime
+    t <- use currentTime
     if t0 <= t && t <= t1
-    then runSubmitTx (fun $ TrueTime t0 t1)
+    then runSubmitTx (fun $ TrueTime t0 t1) inputs
     -- TODO: implement this - ghc makes this harder than it looks unfortunately!
     -- We need to revamp the whole type directed machinery to make all this
     -- nice.

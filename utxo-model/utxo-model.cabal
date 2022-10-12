@@ -79,7 +79,6 @@ library
 
     -- Modules exported by the library.
     exposed-modules:
-      UTxO.Types
       UTxO.Trusted
       UTxO.Model
       UTxO.Value

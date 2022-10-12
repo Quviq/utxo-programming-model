@@ -42,13 +42,13 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Trans.Except
+import Control.Monad.Trans.Maybe
 
 import Data.Typeable
 import Data.Map (Map)
 import Data.Map qualified as Map
 
 import UTxO.Value
--- import UTxO.Types
 
 import Unsafe.Linear qualified as Unsafe
 import Data.Unrestricted.Linear hiding (lift)
@@ -129,17 +129,7 @@ data TrueTime = TrueTime { lowerBound :: Time, upperBound :: Time }
 -- stage of transformation per transaction:
 -- tx :: (UTxOs n %1 -> UTxOs (Succ n)) -> TransactionType
 
--- type UTxOs = TList2 UTxO
--- type MaybeUTxOs = TList2 (MaybeF2 UTxO)
-
 newtype UTxORef owner datum = UTxORef { getRef :: Int }
-
--- TODO: is this safe? We need to write down how these owner tricks work!
--- coerceUTxORef :: UTxORef AnyOwner datum -> UTxORef owner datum
--- coerceUTxORef = UTxORef . getRef
-
--- type UTxORefs = TList2 UTxORef
--- type MaybeUTxORefs = TList2 (MaybeF2 UTxORef)
 
 data Transaction t where
   Transform :: t -> Transaction t
@@ -202,7 +192,11 @@ type family SubmitType t where
   SubmitType t                          = SmartContract (Refs t)
 
 class IsOutput (Output t) => IsTx t where
-  lookupRefs :: Map Int SomeUTxO -> InputRefs t -> Maybe (Inputs t)
+  traverseInputs :: Monad m
+                 => (forall owner datum. (Typeable owner, Typeable datum)
+                                      => UTxORef owner datum
+                                      -> m (Maybe (UTxO owner datum)))
+                 -> InputRefs t -> m (Maybe (Inputs t))
   txFun      :: t %1 -> Inputs t %1 -> Output t
   submitTx'  :: (IsTx top, OutputRefs top ~ OutputRefs t)
              => Transaction top
@@ -220,12 +214,15 @@ class (Output t ~ t, Inputs t ~ (), InputRefs t ~ (), SubmitType t ~ SmartContra
                  -> t -> m (Refs t)
 
 instance {-# OVERLAPPING #-} (Typeable owner, Typeable datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
-  lookupRefs env (UTxORef i, refs) = (,) <$> (unwrapUTxO =<< Map.lookup i env) <*> lookupRefs @t env refs
+  traverseInputs f (ref, refs) = do
+    mutxo <- f ref
+    mutxos <- traverseInputs @t f refs
+    return $ (,) <$> mutxo <*> mutxos
   txFun f (input, inputs) = txFun (f input) inputs
   submitTx' rep k input = submitTx' @t rep (k . (input,))
 
 instance {-# OVERLAPPABLE #-} IsOutput t => IsTx t where
-  lookupRefs _ () = pure ()
+  traverseInputs _ () = pure $ Just ()
   txFun t () = t
   submitTx' rep k = Submit rep (k ()) Done
 
@@ -306,9 +303,6 @@ data SomeUTxO where
            -> datum
            -> SomeUTxO
 
--- wrapUTxO :: (Typeable owner, Typeable datum) => UTxO owner datum -> SomeUTxO
--- wrapUTxO (UTxO owner addr val datum) = SomeUTxO owner addr val datum
-
 unwrapUTxO :: (Typeable owner, Typeable datum) => SomeUTxO -> Maybe (UTxO owner datum)
 unwrapUTxO (SomeUTxO owner addr val datum) = cast (UTxO owner addr val datum)
 
@@ -333,10 +327,18 @@ runSubmitTx :: forall t. IsTx t
             => Transaction t
             -> InputRefs t
             -> Semantics (OutputRefs t)
-runSubmitTx tx inputs = case tx of
+runSubmitTx tx inputRefs = case tx of
   Transform fun         -> do
-    inRefs <- use utxos
-    case lookupRefs @t inRefs inputs of
+    st <- get
+    let consumeInput (UTxORef i) = runMaybeT $ do
+          sUTxO@(SomeUTxO _ _ val _) <- MaybeT $ use $ utxos . at i
+          utxos . at i .= Nothing
+          stxos . at i .= Just sUTxO
+          tell val
+          MaybeT . pure $ unwrapUTxO sUTxO
+    (mInputs, inVal) <- runWriterT
+                       $ traverseInputs @t consumeInput inputRefs
+    case mInputs of
       Nothing -> throwE "Bad refs"
       Just inputs -> do
         let out = txFun @t fun inputs
@@ -345,16 +347,17 @@ runSubmitTx tx inputs = case tx of
               utxos %= Map.insert i (SomeUTxO owner addr val datum)
               tell val
               pure $ UTxORef i
-        (outRefs, _outVal) <- runWriterT $ traverseOutput @(Output t) allocateRef out
-        -- TODO: force and catch errors
-        -- TODO: Check balancedness
-        -- TODO: Move inputs to spent utxos
+        (outRefs, outVal) <- runWriterT $ traverseOutput @(Output t) allocateRef out
+        -- TODO: force and catch errors in `out`
+        when (inVal /= outVal) $ do -- TODO: fees + minAda
+          put st -- rollback state to before transaction
+          throwE $ "inVal: " ++ show inVal ++ " /= outVal: " ++ show outVal
         pure outRefs
   WithSignature _pkh _fun -> error "TODO"
   WithTime t0 t1 fun    -> do
     t <- use currentTime
     if t0 <= t && t <= t1
-    then runSubmitTx (fun $ TrueTime t0 t1) inputs
+    then runSubmitTx (fun $ TrueTime t0 t1) inputRefs
     else throwE "Not in correct time slot"
 
 runSmartContract :: SmartContract a -> Semantics a

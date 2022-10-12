@@ -71,6 +71,9 @@ common lang
     QuantifiedConstraints
     TemplateHaskell
     LambdaCase
+    DerivingStrategies
+    DerivingVia
+    DeriveAnyClass
 
 library
     -- Import common warning flags.
@@ -99,7 +102,8 @@ library
       linear-base,
       mtl,
       transformers,
-      lens
+      lens,
+      deepseq
 
     -- Directories containing source files.
     hs-source-dirs:

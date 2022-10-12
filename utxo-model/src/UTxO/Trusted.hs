@@ -43,7 +43,14 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Maybe
+import Control.DeepSeq
+import Control.Exception
 
+import System.IO.Unsafe
+
+import GHC.Generics (Generic)
+
+import Data.Maybe
 import Data.Typeable
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -55,22 +62,25 @@ import Data.Unrestricted.Linear hiding (lift)
 
 newtype PubKeyHash = PubKeyHash { unPubKeyHash :: Int }
   deriving (Ord, Eq, Show)
+  deriving NFData via Int
 
 data Address where
   Script :: TypeRep -> Address
   Wallet :: PubKeyHash -> Address
-  deriving (Ord, Eq, Show)
+  deriving (Ord, Eq, Show, Generic, NFData)
 
-class Typeable owner => IsOwner owner where
+class (NFData owner, Typeable owner) => IsOwner owner where
   fresh :: Address -> Maybe owner
 
 data AnyOwner where
   AnyOwner :: Address -> AnyOwner
+  deriving (Generic, NFData)
 
 instance IsOwner AnyOwner where
   fresh = Just . AnyOwner
 
 data PubKeyOwner = PubKeyOwner PubKeyHash
+  deriving (Generic, NFData)
 
 instance IsOwner PubKeyOwner where
   fresh (Wallet hash) = Just $ PubKeyOwner hash
@@ -85,7 +95,7 @@ isAddressOf (Wallet pubKeyHash) owner = case cast owner of
 
 data UTxO owner datum where
   UTxO :: owner %1 -> Address -> Value -> datum -> UTxO owner datum
-  deriving (Ord, Eq, Show)
+  deriving (Ord, Eq, Show, Generic, NFData)
 
 mkUTxO :: IsOwner owner => Address -> Value -> datum -> UTxO owner datum
 mkUTxO addr =
@@ -205,7 +215,7 @@ class IsOutput (Output t) => IsTx t where
 
 type OutputRefs t = Refs (Output t)
 
-class (Output t ~ t, Inputs t ~ (), InputRefs t ~ (), SubmitType t ~ SmartContract (Refs t)) => IsOutput t where
+class (NFData t, Output t ~ t, Inputs t ~ (), InputRefs t ~ (), SubmitType t ~ SmartContract (Refs t)) => IsOutput t where
   type Refs t :: *
   traverseOutput :: Applicative m
                  => (forall owner datum. (Typeable owner, Typeable datum)
@@ -226,7 +236,7 @@ instance {-# OVERLAPPABLE #-} IsOutput t => IsTx t where
   txFun t () = t
   submitTx' rep k = Submit rep (k ()) Done
 
-instance (Typeable owner, Typeable datum) => IsOutput (UTxO owner datum) where
+instance (NFData owner, NFData datum, Typeable owner, Typeable datum) => IsOutput (UTxO owner datum) where
   type Refs (UTxO owner datum) = UTxORef owner datum
   traverseOutput f = f
 
@@ -323,7 +333,12 @@ freshRef = do
   nextRef += 1
   pure r
 
-runSubmitTx :: forall t. IsTx t
+forceMaybe :: NFData a => a -> Maybe a
+forceMaybe a =
+  unsafePerformIO . flip (catch @SomeException) (const $ pure Nothing) . fmap Just $ a `deepseq` return a
+
+runSubmitTx :: forall t.
+               IsTx t
             => Transaction t
             -> InputRefs t
             -> Semantics (OutputRefs t)
@@ -348,7 +363,9 @@ runSubmitTx tx inputRefs = case tx of
               tell val
               pure $ UTxORef i
         (outRefs, outVal) <- runWriterT $ traverseOutput @(Output t) allocateRef out
-        -- TODO: force and catch errors in `out`
+        when (isNothing (forceMaybe out)) $ do
+          put st
+          throwE $ "Transaction failed"
         when (inVal /= outVal) $ do -- TODO: fees + minAda
           put st -- rollback state to before transaction
           throwE $ "inVal: " ++ show inVal ++ " /= outVal: " ++ show outVal

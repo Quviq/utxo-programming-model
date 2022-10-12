@@ -5,12 +5,17 @@ import Data.Map qualified as Map
 import Data.Group
 import Data.Maybe
 
+import GHC.Generics
+import Control.DeepSeq
+
 data ValueKey = Ada
               | Token String
-              deriving (Ord, Eq, Show)
+              deriving (Ord, Eq, Show, Generic)
+              deriving anyclass NFData
 
 newtype Value = Value { unValue :: Map ValueKey Integer }
               deriving (Ord, Show)
+              deriving NFData via Map ValueKey Integer
 
 leq :: Value -> Value -> Bool
 v `leq` v' = all (<= 0) $ unValue (v ~~ v')

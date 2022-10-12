@@ -11,6 +11,8 @@ import Prelude hiding (($))
 
 import UTxO.Model
 
+import Control.DeepSeq
+import GHC.Generics
 import Data.Unrestricted.Linear
 import Data.Group
 
@@ -19,9 +21,11 @@ data AuctionData = AuctionData
   , auctionOwner :: PubKeyHash
   , winningBid   :: Value
   , forSale      :: Value
-  }
+  } deriving Generic
+    deriving anyclass NFData
 
-data Auction = Auction
+data Auction = Auction deriving Generic
+                       deriving anyclass NFData
 
 own :: Signature Auction
 own Auction = ()

@@ -433,7 +433,7 @@ runSmartContract sc = case sc of
         | pkh /= pkh' ->
           throwE $ "Trying to run on wallet "
                  ++ show pkh
-                 ++ " inside a call to onWallet on wallet "
+                 ++ " inside a call to onWallet for "
                  ++ show pkh'
       _ -> do
         currentWallet .= Just pkh

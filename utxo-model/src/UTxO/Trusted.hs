@@ -370,7 +370,7 @@ runSubmitTx tx inputRefs = case tx of
           put st -- rollback state to before transaction
           throwE $ "inVal: " ++ show inVal ++ " /= outVal: " ++ show outVal
         pure outRefs
-  WithSignature _pkh _fun -> error "TODO"
+  WithSignature _pkh _fun -> _
   WithTime t0 t1 fun    -> do
     t <- use currentTime
     if t0 <= t && t <= t1

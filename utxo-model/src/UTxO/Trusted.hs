@@ -72,18 +72,20 @@ data Address where
   Wallet :: PubKeyHash -> Address
   deriving (Ord, Eq, Show, Generic, NFData)
 
-class (NFData owner, Typeable owner) => IsOwner owner where
+class (NFData owner, Typeable owner, Show owner) => IsOwner owner where
   fresh :: Address -> Maybe owner
+
+type IsDatum datum = (NFData datum, Typeable datum, Show datum)
 
 data AnyOwner where
   AnyOwner :: Address -> AnyOwner
-  deriving (Generic, NFData)
+  deriving (Show, Generic, NFData)
 
 instance IsOwner AnyOwner where
   fresh = Just . AnyOwner
 
 data PubKeyOwner = PubKeyOwner PubKeyHash
-  deriving (Generic, NFData)
+  deriving (Show, Generic, NFData)
 
 instance IsOwner PubKeyOwner where
   fresh (Wallet hash) = Just $ PubKeyOwner hash
@@ -130,7 +132,7 @@ castUTxO (UTxO (AnyOwner addr) addr' value datum)
   | addr == addr' = mkUTxO addr' value datum
   | otherwise     = failTx () "castUTxO failed."
 
-type Time = Integer -- Slots
+type Time = Int -- Slots
 
 -- NOTE: It's important that this talk about both an upper and a lower
 -- bound on time if we want to turn this into transactions. If this
@@ -171,13 +173,13 @@ data SmartContract a where
          -> SmartContract a
 
   UTxOsAt :: forall (owner :: *) (datum :: *) (a :: *).
-             (Typeable datum, IsOwner owner)
+             (IsOwner owner, IsDatum datum)
           => Address
           -> ([UTxORef owner datum] -> SmartContract a)
           -> SmartContract a
 
   Observe :: forall (owner :: *) (datum :: *) (a :: *).
-             (Typeable owner, Typeable datum)
+             (IsOwner owner, IsDatum datum)
           => UTxORef owner datum
           -> (Maybe (Address, Value, datum) -> SmartContract a)
           -> SmartContract a
@@ -211,7 +213,7 @@ type family SubmitType t where
 
 class IsOutput (Output t) => IsTx t where
   traverseInputs :: Monad m
-                 => (forall owner datum. (Typeable owner, Typeable datum)
+                 => (forall owner datum. (IsOwner owner, IsDatum datum)
                                       => UTxORef owner datum
                                       -> m (Maybe (UTxO owner datum)))
                  -> InputRefs t -> m (Maybe (Inputs t))
@@ -226,12 +228,12 @@ type OutputRefs t = Refs (Output t)
 class (NFData t, Output t ~ t, Inputs t ~ (), InputRefs t ~ (), SubmitType t ~ SmartContract (Refs t)) => IsOutput t where
   type Refs t :: *
   traverseOutput :: Applicative m
-                 => (forall owner datum. (Typeable owner, Typeable datum)
+                 => (forall owner datum. (IsOwner owner, IsDatum datum)
                                       => UTxO owner datum
                                       -> m (UTxORef owner datum))
                  -> t -> m (Refs t)
 
-instance {-# OVERLAPPING #-} (Typeable owner, Typeable datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
+instance {-# OVERLAPPING #-} (IsOwner owner, IsDatum datum, IsTx t) => IsTx (UTxO owner datum %1 -> t) where
   traverseInputs f (ref, refs) = do
     mutxo <- f ref
     mutxos <- traverseInputs @t f refs
@@ -244,7 +246,7 @@ instance {-# OVERLAPPABLE #-} IsOutput t => IsTx t where
   txFun t () = t
   submitTx' rep k = Submit rep (k ()) Done
 
-instance (NFData owner, NFData datum, Typeable owner, Typeable datum) => IsOutput (UTxO owner datum) where
+instance (IsOwner owner, IsDatum datum) => IsOutput (UTxO owner datum) where
   type Refs (UTxO owner datum) = UTxORef owner datum
   traverseOutput f = f
 
@@ -276,13 +278,14 @@ withTime = WithTime
 submitTx :: forall t. IsTx t => Transaction t -> SubmitType t
 submitTx rep = submitTx' @t rep id
 
-index :: forall (owner :: *) (datum :: *). (Typeable datum, IsOwner owner)
+index :: forall (owner :: *) (datum :: *).
+         (IsOwner owner, IsDatum datum)
       => Address
       -> SmartContract [UTxORef owner datum]
 index addr = UTxOsAt addr Done
 
 lookupUTxO :: forall (owner :: *) (datum :: *).
-              (Typeable owner, Typeable datum)
+              (IsOwner owner, IsDatum datum)
            => UTxORef owner datum
            -> SmartContract (Maybe (Address, Value, datum))
 lookupUTxO ref = Observe ref Done
@@ -314,14 +317,16 @@ instance MonadFail SmartContract where
 
 data SomeUTxO where
   SomeUTxO :: forall (owner :: *) (datum :: *).
-              (Typeable owner, Typeable datum)
+              (IsOwner owner, IsDatum datum)
            => owner
            -> Address
            -> Value
            -> datum
            -> SomeUTxO
+deriving instance Show SomeUTxO
 
-unwrapUTxO :: (Typeable owner, Typeable datum) => SomeUTxO -> Maybe (UTxO owner datum)
+unwrapUTxO :: (IsOwner owner, IsDatum datum)
+           => SomeUTxO -> Maybe (UTxO owner datum)
 unwrapUTxO (SomeUTxO owner addr val datum) = cast (UTxO owner addr val datum)
 
 data EmulationState = EmulationState
@@ -330,10 +335,24 @@ data EmulationState = EmulationState
   , _currentTime   :: Time
   , _currentWallet :: Maybe PubKeyHash
   , _nextRef       :: Int
-  }
+  } deriving Show
 makeLenses ''EmulationState
 
+initialState :: [SomeUTxO] -> EmulationState
+initialState initialUTxOs =
+  EmulationState { _utxos         = Map.fromList $ zip [0..] initialUTxOs
+                 , _stxos         = mempty
+                 , _currentTime   = 0
+                 , _currentWallet = Nothing
+                 , _nextRef       = length initialUTxOs
+                 }
+
 type Semantics = ExceptT String (State EmulationState)
+
+data EvaluationResult a = EvaluationResult
+  { result     :: Either String a
+  , finalState :: EmulationState
+  } deriving Show
 
 freshRef :: Semantics Int
 freshRef = do
@@ -389,31 +408,31 @@ runSubmitTx tx inputRefs = case tx of
     then runSubmitTx (fun $ TrueTime t0 t1) inputRefs
     else throwE "Not in correct time slot"
 
-runSmartContract :: SmartContract a -> Semantics a
-runSmartContract sc = case sc of
+semantics :: SmartContract a -> Semantics a
+semantics sc = case sc of
   Done a -> do
     return a
 
   Submit tx is c -> do
     a <- runSubmitTx tx is
-    runSmartContract (c a)
+    semantics (c a)
 
   UTxOsAt @owner @datum addr c -> do
     let mOwner = fresh @owner addr
     case mOwner of
       Just owner | isAddressOf addr owner -> do
         utxoList <- use $ utxos . to Map.toList
-        runSmartContract $ c [ UTxORef i
+        semantics $ c [ UTxORef i
                              | (i, SomeUTxO @_ @datum' _ a _ _d) <- utxoList
                              , a == addr
                              , Just Refl <- [eqT @datum @datum']
                              ]
       _ -> do
-        runSmartContract $ c []
+        semantics $ c []
 
   Observe @owner @datum r c -> do
     mUTxO <- use $ utxos . at (getRef r)
-    runSmartContract . c $ do
+    semantics . c $ do
       SomeUTxO @owner' @datum' _ a v d <- mUTxO
       Refl                             <- eqT @owner @owner'
       Refl                             <- eqT @datum @datum'
@@ -424,7 +443,7 @@ runSmartContract sc = case sc of
 
   AwaitTime t c -> do
     currentTime %= max t
-    runSmartContract c
+    semantics c
 
   OnWallet pkh c -> do
     wallet <- use currentWallet
@@ -437,6 +456,15 @@ runSmartContract sc = case sc of
                  ++ show pkh'
       _ -> do
         currentWallet .= Just pkh
-        runSmartContract c
+        semantics c
     currentWallet .= wallet
     return a
+
+runSmartContract :: [SomeUTxO] -> SmartContract a -> EvaluationResult a
+runSmartContract utxos contract =
+    uncurry EvaluationResult
+  . flip runState (initialState utxos)
+  . runExceptT
+  . semantics
+  $ contract
+

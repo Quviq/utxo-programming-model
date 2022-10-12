@@ -21,11 +21,16 @@ data AuctionData = AuctionData
   , auctionOwner :: PubKeyHash
   , winningBid   :: Value
   , forSale      :: Value
-  } deriving Generic
+  } deriving stock (Show, Generic)
     deriving anyclass NFData
 
-data Auction = Auction deriving Generic
-                       deriving anyclass NFData
+data Auction = Auction
+  deriving stock (Show, Generic)
+  deriving anyclass NFData
+
+-- TODO: not happy with this yet
+instance IsOwner Auction where
+  fresh _ = Just Auction
 
 own :: Signature Auction
 own Auction = ()
@@ -56,7 +61,3 @@ settleInner sign utxo =
   if | winningBid == mempty -> (mkPubKeyUTxO auctionOwner value, Nothing)
      | otherwise            -> (mkPubKeyUTxO auctionOwner winningBid,
                                 Just $ mkUTxO winner (value <> invert winningBid) ())
-
--- TODO: not happy with this yet
-instance IsOwner Auction where
-  fresh _ = Just Auction

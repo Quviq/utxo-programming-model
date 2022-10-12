@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 module UTxO.Trusted
   ( -- * Writing Validators
     PubKeyHash(..)
@@ -37,6 +38,8 @@ module UTxO.Trusted
   , runSmartContract
   ) where
 
+import Prelude.Linear (($))
+import Prelude hiding (($))
 import Control.Lens hiding (index)
 import Control.Monad
 import Control.Monad.State
@@ -104,6 +107,11 @@ mkUTxO addr =
     _ -> failTx () "Owner and address don't match."
 
 type Signature owner = owner %1 -> ()
+
+walletSignature :: PubKeyHash -> Signature PubKeyOwner
+walletSignature pkh = Unsafe.toLinear $ \(PubKeyOwner pkh') ->
+  if | pkh == pkh' -> ()
+     | otherwise   -> error $ "walletSignature: " ++ show pkh ++ " /= " ++ show pkh'
 
 spendUTxO :: UTxO owner datum %1 -> Signature owner -> ()
 spendUTxO (UTxO o _ _ _) sign = sign o
@@ -370,7 +378,7 @@ runSubmitTx tx inputRefs = case tx of
           put st -- rollback state to before transaction
           throwE $ "inVal: " ++ show inVal ++ " /= outVal: " ++ show outVal
         pure outRefs
-  WithSignature _pkh _fun -> _
+  WithSignature pkh fun -> runSubmitTx (fun $ walletSignature pkh) inputRefs
   WithTime t0 t1 fun    -> do
     t <- use currentTime
     if t0 <= t && t <= t1

@@ -34,8 +34,8 @@ module UTxO.Model
   , upperBound
   -- * Writing smart contracts
   , SmartContract
-  , UTxORef(..)
-  , Transaction(..)
+  , UTxORef
+  , Transaction
   , IsTx(..)
   , tx
   , withTime
@@ -58,8 +58,7 @@ import Data.Unrestricted.Linear
 import Data.Typeable
 
 import UTxO.Value
-import UTxO.Trusted hiding (withTime, withSignature)
-import UTxO.Trusted qualified
+import UTxO.Trusted
 
 let' :: a %1 -> (a %1 -> b) %1 -> b
 let' a f = f a
@@ -98,12 +97,6 @@ checkSignature :: Signature PubKeyOwner -> PubKeyHash -> ()
 checkSignature sign hash = case fresh $ Wallet hash of
   Nothing    -> failTx () "The impossible happened"
   Just owner -> sign owner
-
-withSignature :: PubKeyHash -> (Signature PubKeyOwner -> Transaction t) -> Transaction t
-withSignature pkh tx = UTxO.Trusted.withSignature pkh tx
-
-withTime :: Time -> Time -> (TrueTime -> Transaction t) -> Transaction t
-withTime t0 t1 tx = UTxO.Trusted.withTime t0 t1 tx
 
 findWalletUTxOWhere :: PubKeyHash
                     -> (Value -> Bool)

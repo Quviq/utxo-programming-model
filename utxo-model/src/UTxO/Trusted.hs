@@ -423,10 +423,10 @@ semantics sc = case sc of
       Just owner | isAddressOf addr owner -> do
         utxoList <- use $ utxos . to Map.toList
         semantics $ c [ UTxORef i
-                             | (i, SomeUTxO @_ @datum' _ a _ _d) <- utxoList
-                             , a == addr
-                             , Just Refl <- [eqT @datum @datum']
-                             ]
+                      | (i, SomeUTxO @_ @datum' _ a _ _d) <- utxoList
+                      , a == addr
+                      , Just Refl <- [eqT @datum @datum']
+                      ]
       _ -> do
         semantics $ c []
 
@@ -467,4 +467,3 @@ runSmartContract utxos contract =
   . runExceptT
   . semantics
   $ contract
-

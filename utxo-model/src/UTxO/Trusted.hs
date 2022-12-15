@@ -32,6 +32,7 @@ module UTxO.Trusted
   , submitTx
   , lookupUTxO
   , index
+  , getTime
   , awaitTime
   , onWallet
   -- * Semantics
@@ -169,6 +170,9 @@ data Transaction t where
 data SmartContract a where
   Done :: a -> SmartContract a
 
+  GetTime :: (Time -> SmartContract a)
+          -> SmartContract a
+
   Submit :: IsTx t
          => Transaction t
          -> InputRefs t
@@ -269,6 +273,11 @@ instance IsOutput t => IsOutput (Maybe t) where
   type Refs (Maybe t) = Maybe (Refs t)
   traverseOutput f = traverse (traverseOutput f)
 
+instance (IsOutput t, IsOutput t') => IsOutput (Either t t') where
+  type Refs (Either t t') = Either (Refs t) (Refs t')
+  traverseOutput f (Left t)  = Left <$> traverseOutput f t
+  traverseOutput f (Right t) = Right <$> traverseOutput f t
+
 instance IsOutput t => IsOutput [t] where
   type Refs [t] = [Refs t]
   traverseOutput f = traverse (traverseOutput f)
@@ -299,6 +308,9 @@ index :: forall (owner :: *) (datum :: *).
       -> SmartContract [UTxORef owner datum]
 index addr = UTxOsAt addr Done
 
+getTime :: SmartContract Time
+getTime = GetTime Done
+
 lookupUTxO :: forall (owner :: *) (datum :: *).
               (IsOwner owner, IsDatum datum)
            => UTxORef owner datum
@@ -320,6 +332,7 @@ instance Applicative SmartContract where
 
 instance Monad SmartContract where
   Done a         >>= k = k a
+  GetTime c      >>= k = GetTime (c >=> k)
   Submit tx is c >>= k = Submit tx is (c >=> k)
   UTxOsAt a c    >>= k = UTxOsAt a (c >=> k)
   Observe r c    >>= k = Observe r (c >=> k)
@@ -427,6 +440,10 @@ semantics :: SmartContract a -> Semantics a
 semantics sc = case sc of
   Done a -> do
     return a
+
+  GetTime c -> do
+    t <- use currentTime
+    semantics (c t)
 
   Submit tx is c -> do
     a <- runSubmitTx tx is

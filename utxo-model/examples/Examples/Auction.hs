@@ -39,7 +39,7 @@ bid sign bid auctionUTxO utxo =
 runSetupTx :: PubKeyHash
            -> Value
            -> SmartContract (UTxORef Auction AuctionData)
-runSetupTx pkh value = do
+runSetupTx pkh value = onWallet pkh $ do
   utxo <- findWalletUTxOWhere pkh (value `leq`)
   let setupTx = withSignature pkh $ \sig -> tx $ setup sig pkh value
   fst <$> submitTx setupTx utxo
@@ -48,7 +48,7 @@ runBidTx :: PubKeyHash
          -> Value
          -> UTxORef Auction AuctionData
          -> SmartContract (UTxORef Auction AuctionData)
-runBidTx pkh myBid auctionUTxO = do
+runBidTx pkh myBid auctionUTxO = onWallet pkh $ do
   utxo <- findWalletUTxOWhere pkh (myBid `leq`)
   let bidTx = withSignature pkh $ \sign -> tx $ bid sign myBid
   (auctionUTxO, _, _) <- submitTx bidTx auctionUTxO utxo

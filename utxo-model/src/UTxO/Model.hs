@@ -46,8 +46,16 @@ module UTxO.Model
   , lookupUTxO
   , index
   , findWalletUTxOWhere
+  , onWallet
+  , awaitTime
+  , getTime
   -- * Linearity helpers
   , let'
+  -- * Script Parameters
+  , ParamWitness
+  , SomeParams(..)
+  , checkParams
+  , getParams
   ) where
 
 import Prelude.Linear (($))
@@ -58,6 +66,7 @@ import Control.Monad
 import Data.Group
 import Data.Unrestricted.Linear
 import Data.Typeable
+import GHC.TypeLits
 
 import UTxO.Value
 import UTxO.Trusted
@@ -117,3 +126,18 @@ findWalletUTxOWhere pkh p = do
   utxo : _ <- filterM isValidUTxO =<< index (Wallet pkh)
   return utxo
 
+-- NOTE: this is a bit hacky and we want a nicer solution in a stand-alone
+-- language.
+type ParamWitness = Symbol
+type IsParams p = Show p
+
+checkParams :: forall (w :: ParamWitness) p.
+               (IsParams p, KnownSymbol w)
+            => p -> Bool
+checkParams p = show p == symbolVal @w Proxy
+
+data SomeParams where
+  SomeParams :: forall (s :: ParamWitness). KnownSymbol s => SomeParams
+
+getParams :: IsParams p => p -> SomeParams
+getParams p | SomeSymbol @s _ <- someSymbolVal (show p) = SomeParams @s

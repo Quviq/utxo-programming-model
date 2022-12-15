@@ -78,7 +78,8 @@ library
       UTxO.Value
       Examples.Auction
       Examples.Auction.Trusted
-      Examples.PlutusUseCases.EscrowTrusted
+      Examples.Escrow.Trusted
+      Examples.Escrow
 
     -- Modules included in this library but not exported.
     -- other-modules:

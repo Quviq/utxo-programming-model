@@ -6,6 +6,7 @@ module UTxO.Model
   -- ** UTxOs
   , UTxO
   , PubKeyHash(..)
+  , Script
   , Address(..)
   -- ** Ownership
   , IsOwner(..)

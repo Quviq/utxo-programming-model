@@ -3,6 +3,7 @@
 module UTxO.Trusted
   ( -- * Writing Validators
     PubKeyHash(..)
+  , Script
   , Address(..)
   , UTxO
   , IsOwner(..)
@@ -67,8 +68,10 @@ newtype PubKeyHash = PubKeyHash { unPubKeyHash :: Int }
   deriving (Ord, Eq, Show)
   deriving NFData via Int
 
+type Script = TypeRep
+
 data Address where
-  Script :: TypeRep -> Address
+  Script :: Script -> Address
   Wallet :: PubKeyHash -> Address
   deriving (Ord, Eq, Show, Generic, NFData)
 

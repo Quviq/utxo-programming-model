@@ -16,6 +16,7 @@ module UTxO.Model
   , spendUTxO
   , matchUTxO
   , useUTxO
+  , useUTxOs
   , spendFromUTxO
   , castUTxO
   , addressOf
@@ -68,11 +69,18 @@ addressOf utxo = let' (matchUTxO utxo) $ \ (a, Ur _, Ur _, utxo) -> (a, utxo)
 
 useUTxO :: UTxO owner datum
      %1 -> Signature owner
-        -> (Ur Address, Ur Value, Ur datum)
+        -> Ur (Address, Value, datum)
 useUTxO utxo sign =
-  let' (matchUTxO utxo)      $ \ (a, v, d, utxo) ->
+  let' (matchUTxO utxo)      $ \ (Ur a, Ur v, Ur d, utxo) ->
   let' (spendUTxO utxo sign) $ \ () ->
-  (a, v, d)
+  Ur (a, v, d)
+
+useUTxOs :: [UTxO owner datum]
+      %1 -> Signature owner
+         -> Ur [(Address, Value, datum)]
+useUTxOs [] _                = Ur []
+useUTxOs (utxo : utxos) sign =
+  lift2 (:) (useUTxO utxo sign) (useUTxOs utxos sign)
 
 spendFromUTxO :: IsOwner owner
               => Signature owner
@@ -80,7 +88,7 @@ spendFromUTxO :: IsOwner owner
               -> UTxO owner datum
            %1 -> Maybe (UTxO owner datum)
 spendFromUTxO sign v utxo =
-  let' (useUTxO utxo sign) $ \ (Ur a, Ur v', Ur d) ->
+  let' (useUTxO utxo sign) $ \ (Ur (a, v', d)) ->
   if | v' == v   -> Nothing
      | otherwise -> Just $ mkUTxO a (v' <> invert v) d
 

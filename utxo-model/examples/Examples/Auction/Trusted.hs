@@ -28,7 +28,9 @@ data Auction = Auction
   deriving stock (Show, Generic)
   deriving anyclass NFData
 
--- TODO: not happy with this yet
+-- TODO: not happy with this yet - it's an
+-- annoying consequence of the silly Haskell
+-- embedding.
 instance IsOwner Auction where
   fresh _ = Just Auction
 
@@ -40,7 +42,7 @@ bidInner :: UTxO Auction AuctionData
          -> Address
          -> (UTxO Auction AuctionData, Maybe (UTxO AnyOwner ()))
 bidInner utxo newBid bidder =
-  let' (useUTxO utxo own) $ \ (Ur addr, Ur value, Ur d@AuctionData{..}) ->
+  let' (useUTxO utxo own) $ \ (Ur (addr, value, d@AuctionData{..})) ->
   if | adaOf winningBid < adaOf newBid ->
         let auctionUTxO = mkUTxO addr
                                  (value <> newBid <> invert winningBid)
@@ -56,7 +58,7 @@ settleInner :: Signature PubKeyOwner
             -> UTxO Auction AuctionData
          %1 -> (UTxO PubKeyOwner (), Maybe (UTxO AnyOwner ()))
 settleInner sign utxo =
-  let' (useUTxO utxo own) $ \ (Ur _, Ur value, Ur AuctionData{..}) ->
+  let' (useUTxO utxo own) $ \ (Ur (_, value, AuctionData{..})) ->
   let' (checkSignature sign auctionOwner) $ \ () ->
   if | winningBid == mempty -> (mkPubKeyUTxO auctionOwner value, Nothing)
      | otherwise            -> (mkPubKeyUTxO auctionOwner winningBid,

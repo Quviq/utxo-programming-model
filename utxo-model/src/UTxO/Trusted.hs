@@ -196,20 +196,24 @@ data SmartContract a where
            -> SmartContract a
 
 type family InputRefs t where
-  InputRefs (UTxO owner datum %1 -> t) = (UTxORef owner datum, InputRefs t)
-  InputRefs t                          = ()
+  InputRefs (UTxO owner datum %1 -> t)   = (UTxORef owner datum, InputRefs t)
+  InputRefs ([UTxO owner datum] %1 -> t) = ([UTxORef owner datum], InputRefs t)
+  InputRefs t                            = ()
 
 type family Inputs t where
-  Inputs (UTxO owner datum %1 -> t) = (UTxO owner datum, Inputs t)
-  Inputs t                          = ()
+  Inputs (UTxO owner datum %1 -> t)   = (UTxO owner datum, Inputs t)
+  Inputs ([UTxO owner datum] %1 -> t) = ([UTxO owner datum], Inputs t)
+  Inputs t                            = ()
 
 type family Output t where
-  Output (UTxO owner datum %1 -> t) = Output t
-  Output t                          = t
+  Output (UTxO owner datum %1 -> t)   = Output t
+  Output ([UTxO owner datum] %1 -> t) = Output t
+  Output t                            = t
 
 type family SubmitType t where
-  SubmitType (UTxO owner datum %1 -> t) = UTxORef owner datum -> SubmitType t
-  SubmitType t                          = SmartContract (Refs t)
+  SubmitType (UTxO owner datum %1 -> t)   = UTxORef owner datum -> SubmitType t
+  SubmitType ([UTxO owner datum] %1 -> t) = [UTxORef owner datum] -> SubmitType t
+  SubmitType t                            = SmartContract (Refs t)
 
 class IsOutput (Output t) => IsTx t where
   traverseInputs :: Monad m
@@ -238,6 +242,14 @@ instance {-# OVERLAPPING #-} (IsOwner owner, IsDatum datum, IsTx t) => IsTx (UTx
     mutxo <- f ref
     mutxos <- traverseInputs @t f refs
     return $ (,) <$> mutxo <*> mutxos
+  txFun f (input, inputs) = txFun (f input) inputs
+  submitTx' rep k input = submitTx' @t rep (k . (input,))
+
+instance {-# OVERLAPPING #-} (IsOwner owner, IsDatum datum, IsTx t) => IsTx ([UTxO owner datum] %1 -> t) where
+  traverseInputs f (refL, refs) = do
+    mutxoL <- traverse f refL
+    mutxos <- traverseInputs @t f refs
+    return $ (,) <$> sequence mutxoL <*> mutxos
   txFun f (input, inputs) = txFun (f input) inputs
   submitTx' rep k input = submitTx' @t rep (k . (input,))
 

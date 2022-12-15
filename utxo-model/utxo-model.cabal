@@ -78,6 +78,7 @@ library
       UTxO.Value
       Examples.Auction
       Examples.Auction.Trusted
+      Examples.PlutusUseCases.EscrowTrusted
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -90,7 +91,7 @@ library
       base ^>=4.16.3.0,
       containers,
       groups,
-      linear-base,
+      linear-base >= 0.3.0,
       mtl,
       transformers,
       lens,
